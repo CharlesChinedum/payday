@@ -8,6 +8,7 @@ import {
 } from "near-api-js";
 import { config, TGAS } from "./config";
 import type { StreamRecord } from "./csv";
+import { eventsNamed, type TxOutcome } from "./outcome";
 
 export type Role = "employer" | "worker";
 
@@ -45,11 +46,25 @@ export function loadKeyPair(role: Role, create: boolean): KeyPair | null {
   }
 }
 
-export async function onboard(keyPair: KeyPair): Promise<string> {
+const onboarding = new Map<string, Promise<string>>();
+
+/** Ensures the key's implicit account exists; concurrent callers share one request. */
+export function onboard(keyPair: KeyPair): Promise<string> {
+  const publicKey = keyPair.getPublicKey().toString();
+  let pending = onboarding.get(publicKey);
+  if (!pending) {
+    pending = requestOnboarding(publicKey);
+    pending.catch(() => onboarding.delete(publicKey));
+    onboarding.set(publicKey, pending);
+  }
+  return pending;
+}
+
+async function requestOnboarding(publicKey: string): Promise<string> {
   const res = await fetch("/api/onboard", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ publicKey: keyPair.getPublicKey().toString() }),
+    body: JSON.stringify({ publicKey }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? "Could not create your account");
@@ -71,11 +86,16 @@ export async function getUsdcBalance(accountId: string): Promise<bigint> {
   return BigInt(await view<string>(config.usdc, "ft_balance_of", { account_id: accountId }));
 }
 
-export interface RelayResult {
-  ok: boolean;
-  txHash?: string;
-  value?: unknown;
-  error?: string;
+export type RelayResult = (TxOutcome & { error?: undefined }) | { ok: false; error: string; txHash?: undefined };
+
+/** True when the call ran and Payday or the token emitted `event`. */
+export function emitted(res: RelayResult, standard: string, event: string): boolean {
+  return res.error === undefined && eventsNamed(res, standard, event).length > 0;
+}
+
+/** The most useful explanation for a call that did not do what was asked. */
+export function reason(res: RelayResult, fallback: string): string {
+  return res.error ?? res.failures[0] ?? fallback;
 }
 
 /**
@@ -102,8 +122,8 @@ export async function relayCall(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ signedDelegate: bytesToBase64(encodeSignedDelegate(signedDelegate)) }),
   });
-  const data = (await res.json()) as RelayResult;
+  const data = await res.json();
   if (!res.ok) return { ok: false, error: data.error ?? `Relayer returned ${res.status}` };
-  return data;
+  return data as TxOutcome;
 }
 
