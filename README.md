@@ -176,6 +176,8 @@ Payday's streaming maths and cancel rules are ported from my earlier Solidity pr
 
 Libraries used: near-sdk and near-contract-standards (contracts), near-workspaces (tests), Next.js, React, Tailwind CSS, near-api-js, borsh, lottie-web and Fontsource fonts (web).
 
+AI assistance: the contracts, tests, relayer and web app were built with an AI coding assistant (Claude Code), directed and reviewed by me.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
