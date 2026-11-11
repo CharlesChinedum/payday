@@ -223,9 +223,16 @@ fn worker_withdraws_vested_amount() {
 fn worker_withdraws_partial_amount_to_another_receiver() {
     let mut c = setup();
     set_ctx(ALICE, START + 500);
-    c.withdraw(1, Some(U128(100)), Some(acc("deposit.1click.near")));
-    assert_eq!(stream(&c, 1).withdrawn.0, 100);
-    assert_eq!(stream(&c, 1).withdrawable.0, DEPOSIT / 2 - 100);
+    c.withdraw(
+        1,
+        Some(U128(MIN_STREAM_AMOUNT)),
+        Some(acc("deposit.1click.near")),
+    );
+    assert_eq!(stream(&c, 1).withdrawn.0, MIN_STREAM_AMOUNT);
+    assert_eq!(
+        stream(&c, 1).withdrawable.0,
+        DEPOSIT / 2 - MIN_STREAM_AMOUNT
+    );
 }
 
 #[test]
@@ -413,4 +420,20 @@ fn funding_rejects_oversized_batch() {
         .map(|w| (w.as_str(), MIN_STREAM_AMOUNT, START, STOP))
         .collect();
     fund(&mut c, &streams);
+}
+
+#[test]
+#[should_panic(expected = "Withdrawals to another account must be at least 1 USDC")]
+fn external_withdraw_has_minimum() {
+    let mut c = setup();
+    set_ctx(ALICE, START + 500);
+    c.withdraw(1, Some(U128(MIN_STREAM_AMOUNT - 1)), Some(acc(BOB)));
+}
+
+#[test]
+fn small_withdraw_to_self_is_allowed() {
+    let mut c = setup();
+    set_ctx(ALICE, START + 500);
+    c.withdraw(1, Some(U128(1)), None);
+    assert_eq!(stream(&c, 1).withdrawn.0, 1);
 }

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Payday on NEAR testnet.
 #   scripts/testnet.sh deploy   create sub-accounts, deploy mock USDC + Payday
+#   scripts/testnet.sh upgrade  redeploy Payday code to the existing account (state kept)
 #   scripts/testnet.sh demo     mint, fund two streams, withdraw, cancel, print balances
 #                               (--skip-funding reuses streams 1 and 2 from an earlier run)
 # ROOT is your funded testnet account; sub-account keys go to ~/.near-credentials.
@@ -53,6 +54,12 @@ deploy() {
   echo "✓ Deployed: token $USDC, payday $APP"
 }
 
+upgrade() { # redeploy Payday code, keeping state
+  (cd "$DIR/contract" && cargo near build non-reproducible-wasm >/dev/null)
+  near contract deploy "$APP" use-file "$DIR/contract/target/near/payday.wasm" \
+    without-init-call $NET $(sub_sign)
+}
+
 demo() {
   if [[ "${2:-}" != "--skip-funding" ]]; then fund; fi
   call "$ALICE" "$APP" withdraw '{"stream_id":1}' '0 NEAR' "$(sub_sign)" '40 Tgas'
@@ -72,4 +79,4 @@ fund() {
   echo "--- streams for $ROOT"; view "$APP" streams_of "{\"account_id\":\"$ROOT\"}"
 }
 
-"${1:?usage: $0 deploy|demo [--skip-funding]}" "$@"
+"${1:?usage: $0 deploy|upgrade|demo [--skip-funding]}" "$@"

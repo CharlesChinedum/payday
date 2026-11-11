@@ -211,14 +211,15 @@ impl Payday {
             self.streams.insert(id, stream);
         }
         for worker in new_workers {
-            self.register_with_token(worker);
+            self.register_with_token(worker).detach();
         }
         PromiseOrValue::Value(U128(0))
     }
 
     /// Withdraws vested USDC. `amount` defaults to everything withdrawable.
     /// `receiver` defaults to the worker; pass a 1Click deposit address to cash out
-    /// cross-chain. Attach at least 30 Tgas.
+    /// cross-chain (at least 1 USDC; the receiver is registered with the token first).
+    /// Attach 40 Tgas, or 50 Tgas with a `receiver`.
     pub fn withdraw(
         &mut self,
         stream_id: u64,
@@ -239,14 +240,29 @@ impl Payday {
             amount <= withdrawable,
             "Amount exceeds withdrawable balance"
         );
+        let receiver = receiver.unwrap_or_else(|| worker.clone());
+        let external = receiver != worker;
+        if external {
+            require!(
+                amount >= MIN_STREAM_AMOUNT,
+                "Withdrawals to another account must be at least 1 USDC"
+            );
+        }
         stream.withdrawn += amount;
 
-        let receiver = receiver.unwrap_or_else(|| worker.clone());
-        self.transfer(receiver.clone(), amount).then(
-            Self::ext(env::current_account_id())
-                .with_static_gas(GAS_CALLBACK)
-                .on_withdraw(stream_id, worker, receiver, U128(amount)),
-        )
+        let callback = Self::ext(env::current_account_id())
+            .with_static_gas(GAS_CALLBACK)
+            .on_withdraw(stream_id, worker, receiver.clone(), U128(amount));
+        let transfer = self.transfer(receiver.clone(), amount);
+        if external {
+            // A fresh 1Click deposit address is not registered with the token, so
+            // register it first; the token refunds the deposit if it already is.
+            self.register_with_token(receiver)
+                .then(transfer)
+                .then(callback)
+        } else {
+            transfer.then(callback)
+        }
     }
 
     /// Cancels a stream that has not finished. The employer is refunded the unvested
@@ -386,14 +402,13 @@ impl Payday {
             .ft_transfer(receiver, U128(amount), Some("Payday".to_string()))
     }
 
-    /// Fire-and-forget: if registration fails, the worker's withdrawal fails safely and the
-    /// callback credits the amount back, so the stream is never left inconsistent.
-    fn register_with_token(&self, account: AccountId) {
+    /// NEP-145 registration paid by this contract. If it fails, the transfer that follows
+    /// fails too and the withdraw callback credits the amount back.
+    fn register_with_token(&self, account: AccountId) -> Promise {
         ext_ft::ext(self.token.clone())
             .with_attached_deposit(WORKER_STORAGE_DEPOSIT)
             .with_static_gas(GAS_STORAGE_DEPOSIT)
             .storage_deposit(Some(account), Some(true))
-            .detach();
     }
 
     fn transfer_or_owe(&self, account: AccountId, amount: u128) -> Promise {

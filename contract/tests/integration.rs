@@ -223,37 +223,29 @@ async fn other_tokens_are_refunded() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The 1Click risk case: withdrawing to a receiver the token does not know.
-/// The transfer fails and the callback must credit the stream back in full.
+/// The 1Click case: a fresh deposit address is not registered with the token.
+/// Payday registers it, then pays it.
 #[tokio::test]
-async fn failed_withdraw_to_unregistered_receiver_is_restored() -> anyhow::Result<()> {
+async fn withdraw_to_unregistered_receiver_registers_and_pays() -> anyhow::Result<()> {
     let env = setup().await?;
     fund(&env, &[(&env.alice, 1_000 * USDC)], 1_000 * USDC).await?;
-    let stranger = env.sandbox.dev_create_account().await?;
+    let deposit_address = env.sandbox.dev_create_account().await?;
 
     let ok: bool = env
         .alice
         .call(env.payday.id(), "withdraw")
-        .args_json(json!({ "stream_id": 1, "amount": USDC.to_string(), "receiver": stranger.id() }))
-        .max_gas()
+        .args_json(
+            json!({ "stream_id": 1, "amount": USDC.to_string(), "receiver": deposit_address.id() }),
+        )
+        .gas(near_workspaces::types::Gas::from_tgas(50))
         .transact()
         .await?
-        .json()?;
-    assert!(!ok, "transfer to an unregistered account must fail");
-    assert_eq!(amount(&stream(&env, 1).await?, "withdrawn"), 0);
-    assert_eq!(balance(&env, env.payday.id()).await?, 1_000 * USDC);
-
-    // Funds are not stuck: a normal withdrawal still works.
-    let ok: bool = env
-        .alice
-        .call(env.payday.id(), "withdraw")
-        .args_json(json!({ "stream_id": 1, "amount": USDC.to_string() }))
-        .max_gas()
-        .transact()
-        .await?
+        .into_result()?
         .json()?;
     assert!(ok);
-    assert_eq!(balance(&env, env.alice.id()).await?, USDC);
+    assert_eq!(balance(&env, deposit_address.id()).await?, USDC);
+    assert_eq!(amount(&stream(&env, 1).await?, "withdrawn"), USDC);
+    assert_eq!(balance(&env, env.payday.id()).await?, 999 * USDC);
     Ok(())
 }
 
