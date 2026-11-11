@@ -2,6 +2,8 @@
 
 Payroll in USDC that streams to workers every second. Workers withdraw whenever they like, pay no gas, and can cash out to USDC or USDT on another chain.
 
+**Live demo (NEAR testnet): https://payday-near-eight.vercel.app** — no wallet, no NEAR and no sign-up needed.
+
 Built for NEAR HACKATHON 2026, track **Real-World Money** (`realworld`).
 
 ## The problem
@@ -41,7 +43,7 @@ This table is kept up to date as the build progresses. Only rows marked **Done**
 | Web app (`web/`) | **Done** — landing page, employer and worker dashboards; runs locally against testnet |
 | 1Click cash-out | **Quotes done** — live mainnet quotes on testnet; real swaps need the mainnet deploy |
 | CSV export | **Done** — per-stream accountant export |
-| Hosted demo | Not started |
+| Hosted demo | **Done** — https://payday-near-eight.vercel.app (testnet), checked end to end with `pnpm smoke` |
 | Mainnet deployment | Not started |
 
 ## Live on testnet
@@ -75,6 +77,18 @@ Creating a user's account costs the relayer about 0.012 NEAR once (0.005 NEAR se
 ## Try it
 
 > Every step is "do X → see Y". More steps are added as each part lands.
+
+### 0. Use the hosted demo
+
+Open https://payday-near-eight.vercel.app. Go to **My pay** and copy your account, then to **Run payroll**: click **Get 5,000 test USDC**, **Add my worker account**, **Fund payroll**. Back on **My pay** the balance ticks up and **Withdraw** pays you with no gas. Section 3 below walks through every screen.
+
+To check the deployment without clicking, run the smoke test. It plays both roles with fresh keys through the hosted relayer:
+
+```bash
+cd web && pnpm install && pnpm smoke https://payday-near-eight.vercel.app
+```
+
+You should see six ✓ lines (two accounts onboarded, mint, fund, withdraw, balance check) with transaction hashes, then `PASS`.
 
 ### 1. Run the tests
 
@@ -122,6 +136,8 @@ pnpm dev
 5. Back on **My pay**, "Available to withdraw" ticks up every frame. Click **Withdraw**: the toast says "You paid no gas", and "In your account" counts up.
 6. Under **Cash out to another chain**, pick a destination, paste an address, enter an amount (or **Max**) and click **Get quote**. You get a live NEAR Intents price for that route.
 7. On **Run payroll**, **Cancel** asks for confirmation and shows the refund before it acts; **Export CSV** downloads a file with paid out / earned / not yet earned per stream.
+
+`pnpm smoke` with no argument runs the same end-to-end check against http://localhost:3000.
 
 ```bash
 cd web && pnpm test
