@@ -24,12 +24,13 @@ interface OneClickQuote {
   message?: string;
 }
 
-async function upstream(path: string, init?: RequestInit): Promise<{ status: number; body: unknown }> {
+/** `ok` is any 2xx: 1Click answers a new quote with 201 Created. */
+async function upstream(path: string, init?: RequestInit): Promise<{ ok: boolean; status: number; body: unknown }> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (process.env.ONE_CLICK_JWT) headers.Authorization = `Bearer ${process.env.ONE_CLICK_JWT}`;
   try {
     const res = await fetch(`${ONE_CLICK}${path}`, { ...init, headers, signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS) });
-    return { status: res.status, body: await res.json() };
+    return { ok: res.ok, status: res.status, body: await res.json() };
   } catch (e) {
     console.error("[quote] upstream", e);
     throw new HttpError(502, "The cash-out service is not responding; try again shortly");
@@ -74,9 +75,12 @@ export function POST(req: Request) {
       recipientType: "DESTINATION_CHAIN",
       deadline,
     };
-    const { status, body: reply } = await upstream("/quote", { method: "POST", body: JSON.stringify(request) });
+    const { ok, status, body: reply } = await upstream("/quote", { method: "POST", body: JSON.stringify(request) });
     const data = reply as OneClickQuote;
-    if (status !== 200) throw new HttpError(status >= 500 ? 502 : 400, data?.message ?? "Quote failed");
+    if (!ok) {
+      console.error("[quote] 1Click refused", status, JSON.stringify(data).slice(0, 500));
+      throw new HttpError(status >= 500 ? 502 : 400, data?.message ?? "Quote failed");
+    }
 
     const q = data.quote;
     const echo = data.quoteRequest ?? {};
@@ -114,8 +118,8 @@ export function GET(req: Request) {
     perIpStatus(clientIp(req));
     const depositAddress = new URL(req.url).searchParams.get("depositAddress") ?? "";
     if (!IMPLICIT_ACCOUNT.test(depositAddress)) throw new HttpError(400, "depositAddress must be a NEAR implicit account");
-    const { status, body } = await upstream(`/status?depositAddress=${depositAddress}`);
-    if (status !== 200) throw new HttpError(502, "Status unavailable");
+    const { ok, body } = await upstream(`/status?depositAddress=${depositAddress}`);
+    if (!ok) throw new HttpError(502, "Status unavailable");
     const reported = (body as { status?: unknown }).status;
     return Response.json({ status: typeof reported === "string" ? reported.slice(0, 40) : null });
   });

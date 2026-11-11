@@ -1,15 +1,7 @@
 "use client";
 
 import { useRef, useState, type DragEvent } from "react";
-import {
-  csvToDraftRows,
-  draftRowsToCsv,
-  EMPTY_DRAFT_ROW,
-  parsePayrollCsv,
-  summarizeRows,
-  type DraftRow,
-  type PayrollRow,
-} from "@/lib/csv";
+import { csvToDraftRows, EMPTY_DRAFT_ROW, parseDraftRows, summarizeRows, type DraftRow, type PayrollRow } from "@/lib/csv";
 import { formatUsdc } from "@/lib/money";
 import { CloseIcon, PlusIcon, UploadIcon } from "../icons";
 import { Button, Card, TextInput } from "../ui";
@@ -20,12 +12,14 @@ const MAX_ROWS = 25;
 /** A form row plus a stable identity, so React keeps focus when rows are removed. */
 type Draft = DraftRow & { id: number };
 
-type Parsed = { rows: PayrollRow[]; total: bigint } | { error: string };
+type Parsed = { rows: PayrollRow[]; fees: bigint; total: bigint } | { error: string };
 
-function parseDrafts(drafts: DraftRow[], nowSecs: number): Parsed {
+/** The transfer pays every stream plus Payday's per-stream fee. */
+function parseDrafts(drafts: DraftRow[], nowSecs: number, streamFee: bigint): Parsed {
   try {
-    const rows = parsePayrollCsv(draftRowsToCsv(drafts), nowSecs);
-    return { rows, total: rows.reduce((sum, r) => sum + r.amount, 0n) };
+    const rows = parseDraftRows(drafts, nowSecs);
+    const fees = streamFee * BigInt(rows.length);
+    return { rows, fees, total: rows.reduce((sum, r) => sum + r.amount, fees) };
   } catch (e) {
     return { error: e instanceof Error ? e.message : String(e) };
   }
@@ -85,6 +79,8 @@ function RowEditor(props: { row: Draft; onChange: (row: Draft) => void; onRemove
  */
 export function PayrollComposer(props: {
   balance: bigint;
+  /** null until the contract's fee has been read; funding waits for it. */
+  streamFee: bigint | null;
   nowSecs: number;
   ownWorkerId: string | null;
   funding: boolean;
@@ -92,13 +88,14 @@ export function PayrollComposer(props: {
   /** Resolves true when the payroll was funded, so the form can be cleared. */
   onFund: (rows: PayrollRow[], total: bigint) => Promise<boolean>;
 }) {
-  const { balance, nowSecs, ownWorkerId, funding, disabled, onFund } = props;
+  const { balance, streamFee, nowSecs, ownWorkerId, funding, disabled, onFund } = props;
   const [drafts, setDrafts] = useState<Draft[]>([{ ...EMPTY_DRAFT_ROW, id: 0 }]);
   const [dragging, setDragging] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
   const nextId = useRef(1);
   const draft = (row: DraftRow): Draft => ({ ...row, id: nextId.current++ });
 
-  const parsed = parseDrafts(drafts, nowSecs);
+  const parsed: Parsed = streamFee === null ? { error: "Reading Payday's fees…" } : parseDrafts(drafts, nowSecs, streamFee);
   const untouched = drafts.every((r) => r.worker === "" && r.amount === "");
   const shortfall = "rows" in parsed && parsed.total > balance ? parsed.total - balance : 0n;
 
@@ -115,8 +112,13 @@ export function PayrollComposer(props: {
 
   async function importFile(file: File | undefined) {
     if (!file) return;
-    const rows = csvToDraftRows(await file.text());
-    if (rows.length > 0) setDrafts(rows.map(draft));
+    setImportError(null);
+    try {
+      const rows = csvToDraftRows(await file.text());
+      if (rows.length > 0) setDrafts(rows.map(draft));
+    } catch (e) {
+      setImportError(e instanceof Error ? e.message : String(e));
+    }
   }
 
   function onDrop(e: DragEvent) {
@@ -181,8 +183,9 @@ export function PayrollComposer(props: {
         </div>
         <p className="mt-2 text-xs text-muted">
           Leave start empty to begin now, and end empty for 30 days. You can also drop a CSV here:{" "}
-          <span className="num">worker,amount,start,end</span>.
+          <span className="num">worker,amount,start,end</span>, with amounts like 1000 or 12.50 and dates like 2026-12-01.
         </p>
+        {importError && <p className="mt-2 text-sm text-danger">{importError}</p>}
       </div>
 
       <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-5">
@@ -193,7 +196,7 @@ export function PayrollComposer(props: {
               ? parsed.error
               : shortfall > 0n
                 ? `You need ${formatUsdc(shortfall)} more USDC to fund this.`
-                : summarizeRows(parsed.rows)}
+                : `${summarizeRows(parsed.rows)} + ${formatUsdc(parsed.fees)} USDC in Payday fees`}
         </p>
         <Button loading={funding} disabled={disabled || !("rows" in parsed) || shortfall > 0n} onClick={fund}>
           Fund payroll

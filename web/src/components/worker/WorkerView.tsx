@@ -1,20 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import { config } from "@/lib/config";
+import { useEffect, useRef, useState } from "react";
+import { GAS_TGAS, config } from "@/lib/config";
 import type { StreamRecord } from "@/lib/csv";
 import { useLedger, useLog, useNow, useRoleAccount } from "@/lib/hooks";
 import { formatUsdc } from "@/lib/money";
-import { reason, relayCall, withdrawnAmount } from "@/lib/near";
+import { explain, isRegisteredForUsdc, paidOut, relayCall } from "@/lib/near";
+import { report } from "@/lib/report";
 import { WaitingAnimation } from "../animations";
 import { ActivityLog, Toasts } from "../feedback";
+import { BackupBanner, KeyBackup } from "../KeyBackup";
 import { CountAmount, LiveAmount } from "../LiveAmount";
+import { MoveMoney } from "../MoveMoney";
 import { availableNow, fmtDate, progress, ratePerDay, statusOf } from "../StreamMath";
 import { AccountChip, Button, Card, CopyButton, LiveDot, Notice, Pill, ProgressBar, Skeleton, Stat, shortId } from "../ui";
-import { CashOut } from "./CashOut";
-
-const WITHDRAW_GAS_TGAS = 40;
 
 const sumAvailable = (streams: StreamRecord[], nowMs: number) =>
   streams.reduce((sum, s) => sum + availableNow(s, nowMs), 0n);
@@ -114,6 +114,28 @@ function NoSalaryYet({ accountId }: { accountId: string }) {
   );
 }
 
+/** Shown until the worker's account can hold USDC, so the one-time fee is not a surprise. */
+function FirstWithdrawalNote({ accountId, fee }: { accountId: string; fee: bigint }) {
+  const [registered, setRegistered] = useState<boolean | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    isRegisteredForUsdc(accountId).then(
+      (r) => !cancelled && setRegistered(r),
+      () => !cancelled && setRegistered(true),
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [accountId]);
+  if (registered !== false) return null;
+  return (
+    <Notice>
+      Your first withdrawal sets up your account to hold USDC. Payday deducts a one-time {formatUsdc(fee)} USDC for
+      it; after that, withdrawals arrive in full.
+    </Notice>
+  );
+}
+
 function WorkerSkeleton() {
   return (
     <div className="space-y-6" aria-busy="true" aria-label="Setting up your Payday account">
@@ -134,6 +156,7 @@ export function WorkerView() {
   const now = useNow(1000);
   const log = useLog();
   const [pending, setPending] = useState<number[]>([]);
+  const backupCard = useRef<HTMLDivElement>(null);
 
   if (account.status === "loading") return <WorkerSkeleton />;
   if (account.status === "error") return <Notice tone="error">{account.error}</Notice>;
@@ -143,17 +166,13 @@ export function WorkerView() {
   const busy = pending.length > 0;
 
   async function withdrawOne(streamId: number) {
-    try {
-      const res = await relayCall(keyPair, config.payday, "withdraw", { stream_id: streamId }, WITHDRAW_GAS_TGAS);
-      const amount = withdrawnAmount(res);
-      if (amount === null) {
-        log.add(`Withdrawal failed: ${reason(res, "the transfer was reverted and your balance restored")}`, res.txHash, true);
-        return;
-      }
-      log.add(`Withdrew ${formatUsdc(amount, 6)} USDC from stream #${streamId}. You paid no gas.`, res.txHash);
-    } catch (e) {
-      log.add(`Withdrawal failed: ${e instanceof Error ? e.message : String(e)}`, undefined, true);
-    }
+    const res = await relayCall(keyPair, config.payday, "withdraw", { stream_id: streamId }, GAS_TGAS.payout);
+    report(log.add, res, (o) => {
+      const paid = paidOut(o).find((p) => p.source === "stream");
+      if (!paid) return { ok: false, text: `Withdrawal did not go through: ${explain(o, "the payout failed")}` };
+      const fee = paid.fee > 0n ? ` (${formatUsdc(paid.fee)} USDC one-time account setup)` : "";
+      return { ok: true, text: `Withdrew ${formatUsdc(paid.amount, 6)} USDC from stream #${streamId}${fee}. You paid no gas.` };
+    });
   }
 
   // Sequential on purpose: each relayed call consumes the next nonce of the same key.
@@ -177,6 +196,8 @@ export function WorkerView() {
           <p className="mt-2 text-muted">Salary that grows every second. Withdraw any time.</p>
         </div>
       </div>
+
+      <BackupBanner role="worker" onOpen={() => backupCard.current?.scrollIntoView({ behavior: "smooth" })} />
 
       <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
         <BalanceHero streams={mine} now={now} withdrawing={busy} onWithdrawAll={() => withdraw(withdrawable)} />
@@ -219,9 +240,27 @@ export function WorkerView() {
         {ledger.error && <p className="mt-4 text-sm text-danger">Could not read the chain: {ledger.error}</p>}
       </Card>
 
-      {mine.length > 0 && (
-        <CashOut keyPair={keyPair} accountId={account.accountId} streams={mine} now={now} onDone={ledger.refresh} log={log.add} />
+      {mine.length > 0 && ledger.balance === 0n && ledger.fees && (
+        <FirstWithdrawalNote accountId={account.accountId} fee={ledger.fees.registration} />
       )}
+
+      {(mine.length > 0 || ledger.balance > 0n || ledger.owed > 0n) && (
+        <MoveMoney
+          keyPair={keyPair}
+          accountId={account.accountId}
+          streams={mine}
+          balance={ledger.balance}
+          owed={ledger.owed}
+          fees={ledger.fees}
+          now={now}
+          onDone={ledger.refresh}
+          log={log.add}
+        />
+      )}
+
+      <div ref={backupCard} className="scroll-mt-24">
+        <KeyBackup role="worker" accountId={account.accountId} />
+      </div>
 
       <ActivityLog entries={log.entries} />
       <Toasts entries={log.entries} />

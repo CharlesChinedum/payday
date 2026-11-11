@@ -3,24 +3,24 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { KeyPair } from "near-api-js";
 import type { StreamRecord } from "./csv";
-import { getStreams, getUsdcBalance, implicitId, loadKeyPair, onboard, type Role } from "./near";
+import { loadOrCreateKey, readKey, type Role } from "./keys";
+import { getFees, getOwed, getStreams, getUsdcBalance, implicitId, type Fees } from "./near";
 
 export type AccountState =
   | { status: "loading" }
   | { status: "error"; error: string }
   | { status: "ready"; keyPair: KeyPair; accountId: string };
 
-/** This browser's account for `role`: creates a key and its on-chain account if needed. */
+/**
+ * This browser's account for `role`. The key is created on first use; the on-chain
+ * account is created later, the first time it needs to sign something.
+ */
 export function useRoleAccount(role: Role): AccountState {
   const [state, setState] = useState<AccountState>({ status: "loading" });
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      const keyPair = loadKeyPair(role, true);
-      if (!keyPair) throw new Error("This browser blocks local storage, so Payday cannot keep your key.");
-      return { keyPair, accountId: await onboard(keyPair) };
-    })().then(
-      (ready) => !cancelled && setState({ status: "ready", ...ready }),
+    loadOrCreateKey(role).then(
+      (keyPair) => !cancelled && setState({ status: "ready", keyPair, accountId: implicitId(keyPair) }),
       (e: Error) => !cancelled && setState({ status: "error", error: e.message }),
     );
     return () => {
@@ -37,7 +37,7 @@ export function useOtherRoleId(role: Role): string | null {
   return useSyncExternalStore(
     noop,
     () => {
-      const kp = loadKeyPair(role, false);
+      const kp = readKey(role);
       return kp ? implicitId(kp) : null;
     },
     () => null,
@@ -56,6 +56,8 @@ export function useNow(intervalMs: number): number {
 export interface Ledger {
   streams: StreamRecord[];
   balance: bigint;
+  owed: bigint;
+  fees: Fees | null;
   loaded: boolean;
   error: string | null;
   refresh: () => void;
@@ -63,9 +65,16 @@ export interface Ledger {
 
 type LedgerData = Omit<Ledger, "refresh">;
 
-/** Streams and USDC balance for an account, refreshed every 15 s and on demand. */
+/** Streams, USDC balance, owed balance and fees for an account; refreshed every 15 s. */
 export function useLedger(accountId: string | null): Ledger {
-  const [data, setData] = useState<LedgerData>({ streams: [], balance: 0n, loaded: false, error: null });
+  const [data, setData] = useState<LedgerData>({
+    streams: [],
+    balance: 0n,
+    owed: 0n,
+    fees: null,
+    loaded: false,
+    error: null,
+  });
   const [version, setVersion] = useState(0);
   const refresh = useCallback(() => setVersion((v) => v + 1), []);
 
@@ -73,11 +82,11 @@ export function useLedger(accountId: string | null): Ledger {
     if (!accountId) return;
     let cancelled = false;
     const load = () =>
-      Promise.all([getStreams(accountId), getUsdcBalance(accountId)]).then(
-        ([streams, balance]) => !cancelled && setData({ streams, balance, loaded: true, error: null }),
+      Promise.all([getStreams(accountId), getUsdcBalance(accountId), getOwed(accountId), getFees()]).then(
+        ([streams, balance, owed, fees]) =>
+          !cancelled && setData({ streams, balance, owed, fees, loaded: true, error: null }),
         (e: unknown) =>
-          !cancelled &&
-          setData((d) => ({ ...d, loaded: true, error: e instanceof Error ? e.message : String(e) })),
+          !cancelled && setData((d) => ({ ...d, loaded: true, error: e instanceof Error ? e.message : String(e) })),
       );
     load();
     const t = setInterval(load, 15_000);
@@ -110,3 +119,5 @@ export function useLog() {
   }, []);
   return { entries, add };
 }
+
+export type LogFn = ReturnType<typeof useLog>["add"];

@@ -1,31 +1,25 @@
 "use client";
 
-import { useState } from "react";
-import { config, ONE_YOCTO } from "@/lib/config";
+import { useRef, useState } from "react";
+import { GAS_TGAS, ONE_YOCTO, config } from "@/lib/config";
 import { fundingMsg, streamsCsv, summarizeRows, type PayrollRow, type StreamRecord } from "@/lib/csv";
 import { useLedger, useLog, useNow, useOtherRoleId, useRoleAccount } from "@/lib/hooks";
 import { formatUsdc } from "@/lib/money";
-import { emitted, reason, relayCall } from "@/lib/near";
+import { explain, paidOut, payoutFailure, relayCall, requestTestUsdc } from "@/lib/near";
 import { eventsNamed } from "@/lib/outcome";
+import { report } from "@/lib/report";
 import { WaitingAnimation } from "../animations";
 import { ActivityLog, Toasts } from "../feedback";
 import { DownloadIcon } from "../icons";
+import { BackupBanner, KeyBackup } from "../KeyBackup";
 import { CountAmount } from "../LiveAmount";
+import { MoveMoney } from "../MoveMoney";
 import { ratePerDay, statusOf } from "../StreamMath";
 import { AccountChip, Button, Card, Notice, Skeleton, Stat } from "../ui";
 import { PayrollComposer } from "./PayrollComposer";
 import { StreamsTable } from "./StreamsTable";
 
-const TEST_MINT_UNITS = 5_000_000_000n;
-const MINT_GAS_TGAS = 10;
-const CANCEL_GAS_TGAS = 40;
-
 type Action = { kind: "mint" } | { kind: "fund" } | { kind: "cancel"; streamId: number };
-
-/** Registering each worker with the token costs gas, so funding gas grows with the batch. */
-function fundingGasTgas(streamCount: number): number {
-  return Math.min(250, 60 + 8 * streamCount);
-}
 
 function downloadCsv(filename: string, text: string) {
   const url = URL.createObjectURL(new Blob([text], { type: "text/csv" }));
@@ -63,6 +57,7 @@ export function EmployerView() {
   const now = useNow(1000);
   const log = useLog();
   const [action, setAction] = useState<Action | null>(null);
+  const backupCard = useRef<HTMLDivElement>(null);
 
   if (account.status === "loading") return <EmployerSkeleton />;
   if (account.status === "error") return <Notice tone="error">{account.error}</Notice>;
@@ -87,33 +82,38 @@ export function EmployerView() {
   }
 
   const mint = () =>
-    run({ kind: "mint" }, "Mint", undefined, async () => {
-      const args = { account_id: account.accountId, amount: TEST_MINT_UNITS.toString() };
-      const res = await relayCall(keyPair, config.usdc, "mint", args, MINT_GAS_TGAS);
-      if (emitted(res, "nep141", "ft_mint")) log.add(`Received ${formatUsdc(TEST_MINT_UNITS)} test USDC`, res.txHash);
-      else log.add(`Mint failed: ${reason(res, "the token did not mint")}`, res.txHash, true);
+    run({ kind: "mint" }, "Getting test USDC", undefined, async () => {
+      const { txHash } = await requestTestUsdc(account.accountId);
+      log.add("Received 5,000 test USDC", txHash);
     });
 
   const fund = (rows: PayrollRow[], total: bigint) =>
     run({ kind: "fund" }, "Funding", false, async () => {
       const args = { receiver_id: config.payday, amount: total.toString(), msg: fundingMsg(rows) };
-      const res = await relayCall(keyPair, config.usdc, "ft_transfer_call", args, fundingGasTgas(rows.length), ONE_YOCTO);
+      const res = await relayCall(keyPair, config.usdc, "ft_transfer_call", args, GAS_TGAS.funding, ONE_YOCTO);
       // Payday emits one stream_created per stream; if it rejects the payroll the token
       // refunds the whole transfer and there are none.
-      const created = res.error === undefined ? eventsNamed(res, "payday", "stream_created").length : 0;
-      if (created !== rows.length) {
-        log.add(`Payroll refunded: ${reason(res, "Payday rejected the payroll")}`, res.txHash, true);
-        return false;
-      }
-      log.add(`Funded ${summarizeRows(rows)}. Salaries are streaming.`, res.txHash);
-      return true;
+      const outcome = report(log.add, res, (o) =>
+        eventsNamed(o, "payday", "stream_created").length === rows.length
+          ? { ok: true, text: `Funded ${summarizeRows(rows)}. Salaries are streaming.` }
+          : { ok: false, text: `Payroll refunded: ${explain(o, "Payday rejected the payroll")}` },
+      );
+      return outcome === "done";
     });
 
   const cancel = (streamId: number) =>
     run({ kind: "cancel", streamId }, "Cancel", undefined, async () => {
-      const res = await relayCall(keyPair, config.payday, "cancel", { stream_id: streamId }, CANCEL_GAS_TGAS);
-      if (emitted(res, "payday", "stream_canceled")) log.add(`Cancelled stream #${streamId}. Unearned salary is back in your balance.`, res.txHash);
-      else log.add(`Cancel failed: ${reason(res, "Payday did not cancel the stream")}`, res.txHash, true);
+      const res = await relayCall(keyPair, config.payday, "cancel", { stream_id: streamId }, GAS_TGAS.payout);
+      report(log.add, res, (o) => {
+        if (eventsNamed(o, "payday", "stream_canceled").length === 0) {
+          return { ok: false, text: `Not cancelled: ${explain(o, "Payday did not cancel the stream")}` };
+        }
+        const refund = paidOut(o).find((p) => p.receiver === account.accountId);
+        if (refund) return { ok: true, text: `Cancelled stream #${streamId}. ${formatUsdc(refund.amount)} USDC refunded to you.` };
+        const failed = payoutFailure(o);
+        if (failed) return { ok: false, text: `Cancelled stream #${streamId}, but the refund is waiting: ${failed}` };
+        return { ok: true, text: `Cancelled stream #${streamId}. Nothing was left to refund.` };
+      });
     });
 
   return (
@@ -129,13 +129,15 @@ export function EmployerView() {
         </div>
       </div>
 
+      <BackupBanner role="employer" onOpen={() => backupCard.current?.scrollIntoView({ behavior: "smooth" })} />
+
       <Card>
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
           <div>
             <Stat label="USDC balance">
               <CountAmount value={ledger.balance} />
             </Stat>
-            {config.networkId === "testnet" && (
+            {config.hasFaucet && (
               <Button className="mt-3" variant="secondary" loading={action?.kind === "mint"} disabled={busy} onClick={mint}>
                 Get 5,000 test USDC
               </Button>
@@ -156,6 +158,7 @@ export function EmployerView() {
 
       <PayrollComposer
         balance={ledger.balance}
+        streamFee={ledger.fees?.stream ?? null}
         nowSecs={Math.floor(now / 1000)}
         ownWorkerId={ownWorkerId}
         funding={action?.kind === "fund"}
@@ -203,6 +206,24 @@ export function EmployerView() {
         )}
         {ledger.error && <p className="mt-4 text-sm text-danger">Could not read the chain: {ledger.error}</p>}
       </Card>
+
+      {(ledger.balance > 0n || ledger.owed > 0n) && (
+        <MoveMoney
+          keyPair={keyPair}
+          accountId={account.accountId}
+          streams={[]}
+          balance={ledger.balance}
+          owed={ledger.owed}
+          fees={ledger.fees}
+          now={now}
+          onDone={ledger.refresh}
+          log={log.add}
+        />
+      )}
+
+      <div ref={backupCard} className="scroll-mt-24">
+        <KeyBackup role="employer" accountId={account.accountId} />
+      </div>
 
       <ActivityLog entries={log.entries} />
       <Toasts entries={log.entries} />

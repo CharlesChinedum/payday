@@ -2,11 +2,13 @@ import { USDC_DECIMALS } from "./config";
 
 const SCALE = 10n ** BigInt(USDC_DECIMALS);
 
-/** "1234.5" -> 1234500000n. Throws on more than 6 decimals or anything not a number. */
+/**
+ * "1234.5" -> 1234500000n. Commas are refused, not stripped: "12,50" may mean twelve and
+ * a half, and "1,000" inside a CSV is two columns.
+ */
 export function parseUsdc(input: string): bigint {
-  const s = input.trim().replace(/,/g, "");
-  const m = /^(\d+)(?:\.(\d{0,6}))?$/.exec(s);
-  if (!m) throw new Error(`"${input}" is not a USDC amount`);
+  const m = /^(\d+)(?:\.(\d{1,6}))?$/.exec(input.trim());
+  if (!m) throw new Error(`"${input}" is not a USDC amount: write it like 1000 or 12.50, without commas`);
   return BigInt(m[1]) * SCALE + BigInt((m[2] ?? "").padEnd(USDC_DECIMALS, "0"));
 }
 

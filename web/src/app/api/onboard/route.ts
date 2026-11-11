@@ -9,7 +9,9 @@ import { implicitAccountId, spend } from "@/lib/server/relayer";
  * no balance for storage, so 1 yoctoNEAR creates it with nothing to take back out.
  */
 const SEED_YOCTO = 1n;
-const perIp = rateLimiter("account", 10, 60 * 60_000);
+/** Lookups are cheap but still bounded; creations cost the relayer and are strict. */
+const lookupsPerIp = rateLimiter("account", 60, 60_000);
+const creationsPerIp = rateLimiter("new account", 10, 60 * 60_000);
 /**
  * Accounts this instance seeded in the last 10 minutes. Existence is read from final
  * state, which lags a fresh transfer, so this stops a burst for one key paying twice.
@@ -30,7 +32,8 @@ async function hasValue(accountId: string): Promise<boolean> {
  */
 export function POST(req: Request) {
   return handle("onboard", async () => {
-    perIp(clientIp(req));
+    const ip = clientIp(req);
+    lookupsPerIp(ip);
     const body = await readJson(req, 512);
     const accountId = implicitAccountId(body.publicKey);
 
@@ -41,6 +44,7 @@ export function POST(req: Request) {
     if (!(await hasValue(accountId))) {
       throw new HttpError(403, "This account has nothing to manage yet. It is set up once it holds USDC or a salary.");
     }
+    creationsPerIp(ip);
 
     const now = Date.now();
     for (const [id, at] of recentlySeeded) if (now - at >= SEED_MEMORY_MS) recentlySeeded.delete(id);

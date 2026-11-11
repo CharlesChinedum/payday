@@ -1,16 +1,21 @@
 import { describe, expect, it } from "vitest";
 import { formatUsdc, parseUsdc, splitUsdc, usdcDecimal, vestedAt, vestedSmooth } from "./money";
-import { csvToDraftRows, draftRowsToCsv, fundingMsg, parsePayrollCsv, streamsCsv } from "./csv";
+import { csvToDraftRows, fundingMsg, parseDraftRows, parsePayrollCsv, streamsCsv } from "./csv";
 
 describe("USDC amounts", () => {
   it("parses decimals exactly", () => {
     expect(parseUsdc("1")).toBe(1_000_000n);
-    expect(parseUsdc("1,234.5")).toBe(1_234_500_000n);
+    expect(parseUsdc(" 1234.5 ")).toBe(1_234_500_000n);
     expect(parseUsdc("0.000001")).toBe(1n);
   });
 
   it("rejects bad input", () => {
-    for (const bad of ["", "abc", "1.0000001", "-1", "1e6"]) expect(() => parseUsdc(bad)).toThrow();
+    for (const bad of ["", "abc", "1.0000001", "-1", "1e6", "1.", ".5"]) expect(() => parseUsdc(bad)).toThrow();
+  });
+
+  it("refuses commas instead of guessing what they mean (L-02)", () => {
+    expect(() => parseUsdc("1,000")).toThrow("without commas");
+    expect(() => parseUsdc("12,50")).toThrow("without commas");
   });
 
   it("formats for people and for accountants", () => {
@@ -70,12 +75,25 @@ describe("payroll CSV", () => {
     expect(parsePayrollCsv(`${"ab".repeat(32)},5`, NOW)).toHaveLength(1);
   });
 
-  it("explains what is wrong and on which line", () => {
-    expect(() => parsePayrollCsv("Alice!,10", NOW)).toThrow("Line 1");
+  it("explains what is wrong and on which row", () => {
+    expect(() => parsePayrollCsv("Alice!,10", NOW)).toThrow("Row 1");
     expect(() => parsePayrollCsv("alice.testnet,0.5", NOW)).toThrow("at least 1 USDC");
     expect(() => parsePayrollCsv("alice.testnet,10,2026-12-01,2026-11-01", NOW)).toThrow("end must be after start");
     expect(() => parsePayrollCsv("alice.testnet,10,2026-01-01,2026-02-01", NOW)).toThrow("in the future");
     expect(() => parsePayrollCsv("", NOW)).toThrow("at least one worker");
+  });
+
+  it("refuses an amount written with a thousands separator instead of shifting columns (L-02)", () => {
+    expect(() => parsePayrollCsv("alice.testnet,1,000,2026-11-12,2026-12-01", NOW)).toThrow("without commas");
+  });
+
+  it("accepts only real dates in YYYY-MM-DD or ISO-8601 UTC (L-02)", () => {
+    expect(() => parsePayrollCsv("alice.testnet,10,000,2026-12-01", NOW)).toThrow("must be a date");
+    expect(() => parsePayrollCsv("alice.testnet,10,12/01/2026,2026-12-31", NOW)).toThrow("must be a date");
+    expect(() => parsePayrollCsv("alice.testnet,10,2026-11-12,2026-02-30", NOW)).toThrow("not a real date");
+    expect(parsePayrollCsv("alice.testnet,10,2026-11-12T08:30:00Z,2026-12-01", NOW)[0].start).toBe(
+      Date.parse("2026-11-12T08:30:00Z") / 1000,
+    );
   });
 });
 
@@ -105,21 +123,27 @@ describe("accountant CSV", () => {
 });
 
 describe("payroll form rows", () => {
-  it("round-trips CSV through editable rows", () => {
-    const rows = csvToDraftRows("worker,amount,start,end\nalice.testnet, 1000 ,2026-11-01,\n\nbob.testnet,250.5\n");
-    expect(rows).toEqual([
+  const NOW = Date.parse("2026-11-12T00:00:00Z") / 1000;
+
+  it("imports CSV into editable rows", () => {
+    expect(csvToDraftRows("worker,amount,start,end\nalice.testnet, 1000 ,2026-11-01,\n\nbob.testnet,250.5\n")).toEqual([
       { worker: "alice.testnet", amount: "1000", start: "2026-11-01", end: "" },
       { worker: "bob.testnet", amount: "250.5", start: "", end: "" },
     ]);
-    expect(draftRowsToCsv(rows)).toBe("alice.testnet,1000,2026-11-01,\nbob.testnet,250.5,,");
   });
 
-  it("drops blank rows but keeps half-filled ones for validation", () => {
-    const csv = draftRowsToCsv([
-      { worker: "", amount: "", start: "2026-11-01", end: "" },
-      { worker: "alice.testnet", amount: "", start: "", end: "" },
-    ]);
-    expect(csv).toBe("alice.testnet,,,");
-    expect(() => parsePayrollCsv(csv, 0)).toThrow("Line 1");
+  it("validates each field directly, ignoring fully blank rows", () => {
+    const rows = parseDraftRows(
+      [
+        { worker: "", amount: "", start: "", end: "" },
+        { worker: "alice.testnet", amount: "1000", start: "", end: "" },
+      ],
+      NOW,
+    );
+    expect(rows).toEqual([{ worker: "alice.testnet", amount: 1_000_000_000n, start: NOW, stop: NOW + 30 * 86_400 }]);
+    expect(() =>
+      parseDraftRows([{ worker: "alice.testnet", amount: "1,000", start: "2026-11-12", end: "" }], NOW),
+    ).toThrow("Row 1");
   });
 });
+

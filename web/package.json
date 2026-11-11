@@ -9,7 +9,10 @@
     "lint": "eslint",
     "test": "vitest run",
     "lottie": "node scripts/build-lottie.mjs",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "localnet": "scripts/localnet.sh",
+    "localnet:setup": "node scripts/localnet-setup.mjs",
+    "dev:localnet": "scripts/dev-localnet.sh"
   },
   "dependencies": {
     "@fontsource-variable/geist": "5.3.0",
@@ -17,6 +20,7 @@
     "@fontsource/instrument-serif": "5.3.0",
     "@noble/hashes": "2.2.0",
     "@scure/base": "2.2.0",
+    "bip39-light": "1.0.7",
     "borsh": "2.0.0",
     "lottie-web": "5.13.0",
     "near-api-js": "7.4.0",

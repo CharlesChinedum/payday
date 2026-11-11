@@ -1,3 +1,5 @@
+import { DEFAULT_RPC } from "./rpc";
+
 export type NetworkId = "testnet" | "mainnet" | "localnet";
 
 export interface NetworkConfig {
@@ -15,6 +17,7 @@ export interface NetworkConfig {
   demoStreamId?: number;
 }
 
+
 const MAINNET_USDC = "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1";
 const ORIGIN_ASSET = `nep141:${MAINNET_USDC}`;
 
@@ -26,7 +29,7 @@ function buildConfig(): NetworkConfig {
     case "testnet":
       return {
         networkId,
-        rpcUrl: "https://test.rpc.fastnear.com",
+        rpcUrl: DEFAULT_RPC.testnet,
         payday: "app.payday-dev.testnet",
         usdc: "usdc.payday-dev.testnet",
         explorer: "https://testnet.nearblocks.io",
@@ -37,7 +40,7 @@ function buildConfig(): NetworkConfig {
     case "mainnet":
       return {
         networkId,
-        rpcUrl: process.env.NEXT_PUBLIC_RPC_URL || "https://free.rpc.fastnear.com",
+        rpcUrl: process.env.NEXT_PUBLIC_RPC_URL || DEFAULT_RPC.mainnet,
         payday: required("NEXT_PUBLIC_PAYDAY", process.env.NEXT_PUBLIC_PAYDAY),
         usdc: MAINNET_USDC,
         explorer: "https://nearblocks.io",
