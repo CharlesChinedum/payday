@@ -43,7 +43,7 @@ This table is kept up to date as the build progresses. Only rows marked **Done**
 | Web app (`web/`) | **Done** — landing page, employer and worker dashboards; runs locally against testnet |
 | 1Click cash-out | **Quotes done** — live mainnet quotes on testnet; real swaps need the mainnet deploy |
 | CSV export | **Done** — per-stream accountant export |
-| Hosted demo | **Done** — https://payday-near-eight.vercel.app (testnet), checked end to end with `pnpm smoke` |
+| Hosted demo | **Done** — https://payday-near-eight.vercel.app (testnet), redeployed from `main` on every push and checked end to end with `pnpm smoke` |
 | Mainnet deployment | Not started |
 
 ## Live on testnet
