@@ -1,0 +1,19 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /web
+    schedule:
+      interval: weekly
+    # Give new releases two weeks before proposing them (supply-chain hygiene).
+    cooldown:
+      default-days: 14
+  - package-ecosystem: cargo
+    directory: /contract
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 14
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

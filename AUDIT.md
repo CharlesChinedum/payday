@@ -16,6 +16,54 @@
 
 **The live testnet demo is exposed now.** The relayer holds 1.83 testnet NEAR. One IP sending forged requests at the allowed rate empties it in about six hours; a handful of IPs, or the cross-origin trick in M-09, in under an hour. That would take the demo down before judging ends on 18 November. H-01, H-02 and H-04 are worth fixing before then, testnet or not.
 
+## Remediation (11 November 2026)
+
+Every finding was worked on the same day. The contract is now version 2.0.0 (commit `8a8c9e5`), the API routes were rewritten (`fe57ad2`) and the client updated (`43e198e`). The proofs of concept now live in `contract/tests/security.rs` and assert the fixes, and `web/scripts/smoke.mjs` replays the relayer attacks against a running deployment.
+
+| ID | Status | What changed | Evidence |
+|---|---|---|---|
+| H-01 | **Fixed** | The relayer verifies the ed25519 signature over the NEP-366 hash, requires the sender to be the signing key's implicit account, validates arguments against a strict per-method schema, and pre-flights against chain state (key exists, nonce fresh, not expired, valid ≤ ~10 min, call will succeed) before paying. | `delegate.test.ts` rejects the forged delegate; smoke test: forged → 403, replay → 409 |
+| H-02 | **Fixed** | Accounts are seeded with 1 yoctoNEAR (confirmed on testnet that this creates an implicit account, tx `8mUh1KDu…`) and only once they hold ≥ 1 USDC, a stream or an owed balance. Test USDC comes from a server faucet. | Smoke test: empty account → 403 |
+| H-03 | **Fixed** | Funding registers nobody. Payouts ask USDC whether the receiver is registered and only then register it, deducting a 0.01 USDC fee; a per-stream 0.01 USDC fee is charged at funding; registrations are skipped below a NEAR reserve. | `fixed_h03_*`: fund+cancel of 25 streams changes the contract's NEAR by +0.00000 and costs the attacker 0.25 USDC; 10 cash-outs to fresh accounts pay 0.1 USDC for 0.0125 NEAR of registrations |
+| H-04 | **Partly fixed** | A relayer balance floor (0.5 NEAR) read from the chain stops all spending across every instance; limiters count IPs first, evict, and cap keys. With H-01 and H-02, no request path spends for free. **Open:** shared rate limits (Vercel Firewall or a shared store). | `relayer.ts` `spend()` |
+| H-05 | **Partly fixed** | New accounts come from a 12-word recovery phrase; backup card (nothing rendered until revealed, copy, download), restore with BIP-39 checksum check, a banner until backed up, key creation under a Web Lock; CSP `connect-src` limits where an injected script could send a key. **Open:** keys still live in `localStorage`; mainnet should use a wallet or passkey signer. | `keys.test.ts` |
+| H-06 | **Fixed** | `send_to` exit path through the contract (fee-protected); "Move money out" from salary or balance to any NEAR account or another chain; Claim for owed balances; cancel reports whether the refund arrived. | `send_moves_usdc_out_of_an_account`; smoke test send |
+| M-01 | **Fixed** | Streams deleted once fully paid; permissionless `prune`. | `fixed_m01`: +0 bytes after 25 settled streams |
+| M-02 | **Fixed** | Cancel moves sub-1 USDC remainders to `owed` and deletes the stream; `streams_of` pages; `stream_count_of` added. | `fixed_m02` |
+| M-03 | **Fixed in code** | Owner (two-step transfer), pause for new funding, capped fee settings, `upgrade` + `migrate` so the account can drop its keys; 1.0.0 → 2.0.0 migration tested. **Open (operational):** a multisig owner, removing the account's full-access key, and a reproducible build for mainnet. | `owner_upgrade_keeps_state`, `migrates_the_1_0_0_layout_and_keeps_its_data` |
+| M-04 | **Fixed** | Server validates the recipient per chain (EIP-55, Solana length, Tron Base58Check), requires a Payday refund account that can afford the amount, checks the answer echoes the request and the deposit address shape; the UI enforces the deadline, quotes net of the deposit-address setup fee so 1Click receives exactly `amountIn`, and keeps sent cash-outs across reloads. | `address.test.ts` |
+| M-05 | **Fixed** | Rate-limited, amount capped by what the refund account can spend, timeouts and error handling. Quotes are not signature-bound; they reveal nothing and refund only to the named account. | `quote/route.ts` |
+| M-06 | **Fixed** | Public key format checked before decoding; small body caps on every route. | Smoke test: 40,000-character key → 413, malformed → 400 |
+| M-07 | **Fixed** | IP limit first; the sender limit counts only after the signature checks. | `relay/route.ts` |
+| M-08 | **Fixed** | Only the RPC's `UNKNOWN_ACCOUNT` means "does not exist"; other errors fail closed. | `chain.ts` |
+| M-09 | **Fixed** | Routes accept only `application/json` from the same origin. | Smoke test: cross-site → 403, `text/plain` → 415 |
+| L-01 | **Fixed** | A relay that is not confirmed returns 202 "unknown"; the UI says so and asks the user to check balances before retrying. | `report.ts` |
+| L-02 | **Fixed** | Commas in amounts refused; dates must be `YYYY-MM-DD` or ISO-8601 with `Z` and real; form rows validated as fields. | `money.test.ts` |
+| L-03 | **Fixed** | Funding refused and registrations skipped if they would eat the NEAR reserve. | `funding_refuses_to_eat_the_near_reserve`, `no_registration_below_the_near_reserve` |
+| L-04 | **Fixed** | Payouts register any unregistered receiver, including the worker. | `full_payroll_flow` |
+| L-05 | **Fixed** | `new` is `#[private]`. | `new_cannot_be_called_by_others` |
+| L-06 | **Fixed** | Generic errors with a reference id; details only in server logs. | `http.ts` |
+| I-01 | **Partly fixed** | CSP and security headers. Scripts still need `'unsafe-inline'`: a nonce CSP is incompatible with the app's Partial Prerendering. | `next.config.ts` |
+| I-02 | **Fixed** | Comments corrected; policy tests pin deposits to 0 or 1 yoctoNEAR. | `policy.test.ts` |
+| I-03 | **Fixed** | Events count only from the contract that owns their standard. | `outcome.test.ts` |
+| I-04 | **Fixed** | Network config validated at startup. | `config.ts` |
+| I-05 | **Fixed** | Start within a year of now, at most five years long; receivers cannot be the contract or the token. | `funding_rejects_milliseconds`, `cannot_pay_out_to_the_contract` |
+| I-06 | **Fixed** | `paid` and `payout_failed` (with `credited_to` and a reason) for every payout, `stream_closed`, and `worker_remaining_to` on cancel. Ids stay u64 numbers, safe in JavaScript far beyond any realistic count. | unit tests |
+| I-07 | **Partly fixed** | Static gas raised; registration is checked before paying, so duplicate-registration behaviour no longer matters. **Open:** Circle USDC's `storage_unregister` refund; the 0.01 USDC fee exceeds the 0.00125 NEAR deposit while NEAR is under about $8, and the owner can raise it. | |
+| I-08 | **Partly fixed** | CI (format, clippy with warnings as errors, unit tests, web lint/test/build, `pnpm audit`) and Dependabot with a 14-day cooldown. **Open:** branch protection on the auto-deploying `main`. | `.github/workflows/ci.yml` |
+| I-09 | **Fixed / accepted** | `claim_owed` can pay another receiver. A blacklisted worker redirecting pay is accepted. | `claim_owed_can_pay_another_account` |
+
+**Found and fixed while remediating** (in new code, before release):
+
+- Chaining a promise that already had a callback (`register.then(transfer.then(settle))`) is illegal on NEAR; every first-time payout would have aborted. Caught by a unit test.
+- The NEAR reserve check ran before the new streams were written to storage, so it measured too little. Caught by a unit test.
+- The recovery-phrase library derives a key from any words without checking the BIP-39 checksum; a typo would have restored a different, empty account.
+- The backup card rendered the recovery words blurred rather than not at all.
+- 1Click answers a new quote with HTTP 201, which the stricter quote route treated as a failure.
+- Onboarding lookups for existing accounts counted against the account-creation limit.
+
+**Still open before mainnet:** H-04 (shared rate limits), H-05 (wallet or passkey signer), M-03 operational steps (multisig owner, key removal, reproducible build), I-01 (nonce CSP), I-07 (`storage_unregister` on Circle USDC), I-08 (branch protection), and a re-review of the fixed code.
+
 ## Summary
 
 | ID | Finding | Severity | Status |
@@ -261,11 +309,11 @@ Any RPC error is read as "account does not exist", so during an RPC outage or ra
 
 Then re-run this review on the fixed commit, with the proof-of-concept tests flipped to assert the fixes.
 
-## Reproducing the proof-of-concept tests
+## Reproducing the tests
 
 ```bash
 scripts/build.sh
-cd contract && cargo test --test audit_poc -- --nocapture --test-threads=1
+cd contract && cargo test --test security -- --nocapture --test-threads=1
 ```
 
-Each `poc_*` test passes while its issue exists and prints the figures quoted above; each `check_*` test confirms a property this report relies on. Run on 11 November 2026: 6 passed in 81 s.
+The proofs of concept that produced the figures in the findings (commit `9228c04`, `contract/tests/audit_poc.rs`) passed while each issue existed. They now live in `contract/tests/security.rs` as `fixed_*` tests that replay each attack and assert it no longer works, alongside the `check_*` tests for the properties this report relies on.

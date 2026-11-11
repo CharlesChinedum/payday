@@ -1,21 +1,23 @@
 #!/usr/bin/env bash
 # Payday on NEAR testnet.
-#   scripts/testnet.sh deploy   create sub-accounts, deploy mock USDC + Payday
-#   scripts/testnet.sh upgrade  redeploy Payday code to the existing account (state kept)
-#   scripts/testnet.sh demo     mint, fund two streams, withdraw, cancel, print balances
-#                               (--skip-funding reuses streams 1 and 2 from an earlier run)
-# ROOT is your funded testnet account; sub-account keys go to ~/.near-credentials.
+#   scripts/testnet.sh deploy      create sub-accounts, deploy mock USDC + Payday 2.0
+#   scripts/testnet.sh migrate-v1  one-off: replace 1.0.0 code with 2.0 and migrate its
+#                                  state (uses the contract account's own key)
+#   scripts/testnet.sh upgrade     upgrade through the contract: the owner (ROOT) sends
+#                                  the new code to `upgrade`, which deploys and migrates.
+#                                  Works after the contract account's keys are removed.
+# To exercise a deployment end to end, run the web app's smoke test (web/: pnpm smoke).
+# ROOT is your funded testnet account and becomes the contract owner; sub-account keys
+# go to ~/.near-credentials.
 set -euo pipefail
 
 ROOT="${ROOT:-payday-dev.testnet}"
 USDC="usdc.$ROOT"
 APP="app.$ROOT"
-ALICE="alice.$ROOT"
-BOB="bob.$ROOT"
 NET="network-config testnet"
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
+WASM="$DIR/contract/target/near/payday.wasm"
 STORAGE="0.00125 NEAR"
-U=1000000 # 1 USDC in base units
 
 root_sign() { echo "sign-with-keychain send"; }
 sub_sign() { echo "sign-with-legacy-keychain send"; }
@@ -28,55 +30,40 @@ create() { # account, balance
     save-to-legacy-keychain sign-as "$ROOT" $NET $(root_sign)
 }
 
-call() { # signer, contract, method, json, deposit, sign-mode, [gas]
-  near contract call-function as-transaction "$2" "$3" json-args "$4" \
-    prepaid-gas "${7:-300 Tgas}" attached-deposit "$5" sign-as "$1" $NET $6
-}
-
-view() { # contract, method, json
-  near contract call-function as-read-only "$1" "$2" json-args "$3" $NET now 2>/dev/null
+build() {
+  (cd "$DIR/contract" && cargo near build non-reproducible-wasm >/dev/null)
 }
 
 deploy() {
   (cd "$DIR/mock-usdc" && cargo near build non-reproducible-wasm >/dev/null)
-  (cd "$DIR/contract" && cargo near build non-reproducible-wasm >/dev/null)
+  build
   create "$USDC" '2.5 NEAR'
-  create "$APP" '3 NEAR'
-  create "$ALICE" '0.05 NEAR'
-  create "$BOB" '0.05 NEAR'
+  create "$APP" '3.5 NEAR'
   near contract deploy "$USDC" use-file "$DIR/mock-usdc/target/near/mock_usdc.wasm" \
     with-init-call new json-args '{}' prepaid-gas '30 Tgas' attached-deposit '0 NEAR' \
     $NET $(sub_sign)
-  near contract deploy "$APP" use-file "$DIR/contract/target/near/payday.wasm" \
-    with-init-call new json-args "{\"token\":\"$USDC\"}" prepaid-gas '30 Tgas' attached-deposit '0 NEAR' \
-    $NET $(sub_sign)
-  call "$ROOT" "$USDC" storage_deposit "{\"account_id\":\"$APP\",\"registration_only\":true}" "$STORAGE" "$(root_sign)"
-  echo "✓ Deployed: token $USDC, payday $APP"
+  near contract deploy "$APP" use-file "$WASM" \
+    with-init-call new json-args "{\"token\":\"$USDC\",\"owner\":\"$ROOT\"}" \
+    prepaid-gas '30 Tgas' attached-deposit '0 NEAR' $NET $(sub_sign)
+  near contract call-function as-transaction "$USDC" storage_deposit \
+    json-args "{\"account_id\":\"$APP\",\"registration_only\":true}" \
+    prepaid-gas '30 Tgas' attached-deposit "$STORAGE" sign-as "$ROOT" $NET $(root_sign)
+  echo "✓ Deployed: token $USDC, payday $APP, owner $ROOT"
 }
 
-upgrade() { # redeploy Payday code, keeping state
-  (cd "$DIR/contract" && cargo near build non-reproducible-wasm >/dev/null)
-  near contract deploy "$APP" use-file "$DIR/contract/target/near/payday.wasm" \
-    without-init-call $NET $(sub_sign)
+migrate-v1() {
+  build
+  near contract deploy "$APP" use-file "$WASM" \
+    with-init-call migrate json-args "{\"owner\":\"$ROOT\"}" \
+    prepaid-gas '100 Tgas' attached-deposit '0 NEAR' $NET $(sub_sign)
+  near contract call-function as-read-only "$APP" config json-args '{}' $NET now
 }
 
-demo() {
-  if [[ "${2:-}" != "--skip-funding" ]]; then fund; fi
-  call "$ALICE" "$APP" withdraw '{"stream_id":1}' '0 NEAR' "$(sub_sign)" '40 Tgas'
-  call "$ROOT" "$APP" cancel '{"stream_id":2}' '0 NEAR' "$(root_sign)" '40 Tgas'
-  for a in "$ROOT" "$ALICE" "$BOB" "$APP"; do
-    printf '%-28s %s\n' "$a" "$(view "$USDC" ft_balance_of "{\"account_id\":\"$a\"}")"
-  done
+upgrade() {
+  build
+  near contract call-function as-transaction "$APP" upgrade file-args "$WASM" \
+    prepaid-gas '300 Tgas' attached-deposit '0 NEAR' sign-as "$ROOT" $NET $(root_sign)
+  near contract call-function as-read-only "$APP" config json-args '{}' $NET now
 }
 
-fund() {
-  call "$ROOT" "$USDC" mint "{\"account_id\":\"$ROOT\",\"amount\":\"$((3000 * U))\"}" '0 NEAR' "$(root_sign)"
-  now=$(date +%s)
-  msg="{\"streams\":[{\"worker\":\"$ALICE\",\"amount\":\"$((1000 * U))\",\"start\":$((now - 3600)),\"stop\":$((now + 30 * 86400))},{\"worker\":\"$BOB\",\"amount\":\"$((2000 * U))\",\"start\":$((now - 3600)),\"stop\":$((now + 30 * 86400))}]}"
-  msg_json=$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$msg")
-  call "$ROOT" "$USDC" ft_transfer_call \
-    "{\"receiver_id\":\"$APP\",\"amount\":\"$((3000 * U))\",\"msg\":$msg_json}" '1 yoctoNEAR' "$(root_sign)"
-  echo "--- streams for $ROOT"; view "$APP" streams_of "{\"account_id\":\"$ROOT\"}"
-}
-
-"${1:?usage: $0 deploy|upgrade|demo [--skip-funding]}" "$@"
+"${1:?usage: $0 deploy|migrate-v1|upgrade}"
