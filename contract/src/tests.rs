@@ -401,3 +401,16 @@ fn cancel_conserves_funds_at_every_second() {
         assert_eq!(refund + early + worker_left, DEPOSIT, "t = {t}");
     }
 }
+
+#[test]
+#[should_panic(expected = "Too many streams in one transfer")]
+fn funding_rejects_oversized_batch() {
+    set_ctx(EMPLOYER, 0);
+    let mut c = Payday::new(acc(USDC));
+    let workers: Vec<String> = (0..=MAX_BATCH).map(|i| format!("w{i}.testnet")).collect();
+    let streams: Vec<_> = workers
+        .iter()
+        .map(|w| (w.as_str(), MIN_STREAM_AMOUNT, START, STOP))
+        .collect();
+    fund(&mut c, &streams);
+}

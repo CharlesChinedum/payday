@@ -13,6 +13,11 @@
 //!
 //! Storage for streams is paid by this contract; `MIN_STREAM_AMOUNT` and `MAX_BATCH`
 //! bound how cheaply that storage can be consumed.
+//!
+//! Workers never need NEAR: when a stream is funded, this contract registers the worker
+//! with the token contract (NEP-145 `storage_deposit`, paid from this contract's balance;
+//! the token refunds the deposit if the worker is already registered), and withdrawals
+//! are submitted by a meta-transaction relayer.
 
 use near_sdk::json_types::U128;
 use near_sdk::serde_json::json;
@@ -28,9 +33,14 @@ mod tests;
 /// 1 USDC (6 decimals). Smaller streams are rejected to keep storage griefing costly.
 pub const MIN_STREAM_AMOUNT: u128 = 1_000_000;
 /// Maximum streams created by one funding transfer, to stay well inside the gas limit.
-pub const MAX_BATCH: usize = 50;
+/// Funding needs 300 Tgas attached to `ft_transfer_call`.
+pub const MAX_BATCH: usize = 25;
+/// NEP-145 registration cost on a standard NEP-141 token (125 bytes of storage).
+pub const WORKER_STORAGE_DEPOSIT: NearToken =
+    NearToken::from_yoctonear(1_250_000_000_000_000_000_000);
 
 const GAS_FT_TRANSFER: Gas = Gas::from_tgas(10);
+const GAS_STORAGE_DEPOSIT: Gas = Gas::from_tgas(5);
 const GAS_CALLBACK: Gas = Gas::from_tgas(10);
 const ONE_YOCTO: NearToken = NearToken::from_yoctonear(1);
 const NANOS_PER_SEC: u64 = 1_000_000_000;
@@ -39,6 +49,7 @@ const NANOS_PER_SEC: u64 = 1_000_000_000;
 #[allow(dead_code)]
 trait FungibleToken {
     fn ft_transfer(&mut self, receiver_id: AccountId, amount: U128, memo: Option<String>);
+    fn storage_deposit(&mut self, account_id: Option<AccountId>, registration_only: Option<bool>);
 }
 
 #[near(serializers = [borsh])]
@@ -160,6 +171,7 @@ impl Payday {
 
         let now = now_secs();
         let contract = env::current_account_id();
+        let mut new_workers: Vec<AccountId> = Vec::with_capacity(count);
         for req in funding.streams {
             require!(req.worker != sender_id, "Worker cannot be the employer");
             require!(req.worker != contract, "Worker cannot be this contract");
@@ -193,7 +205,13 @@ impl Payday {
                     "stop": stream.stop,
                 }),
             );
+            if !new_workers.contains(&stream.worker) {
+                new_workers.push(stream.worker.clone());
+            }
             self.streams.insert(id, stream);
+        }
+        for worker in new_workers {
+            self.register_with_token(worker);
         }
         PromiseOrValue::Value(U128(0))
     }
@@ -366,6 +384,16 @@ impl Payday {
             .with_attached_deposit(ONE_YOCTO)
             .with_static_gas(GAS_FT_TRANSFER)
             .ft_transfer(receiver, U128(amount), Some("Payday".to_string()))
+    }
+
+    /// Fire-and-forget: if registration fails, the worker's withdrawal fails safely and the
+    /// callback credits the amount back, so the stream is never left inconsistent.
+    fn register_with_token(&self, account: AccountId) {
+        ext_ft::ext(self.token.clone())
+            .with_attached_deposit(WORKER_STORAGE_DEPOSIT)
+            .with_static_gas(GAS_STORAGE_DEPOSIT)
+            .storage_deposit(Some(account), Some(true))
+            .detach();
     }
 
     fn transfer_or_owe(&self, account: AccountId, amount: u128) -> Promise {

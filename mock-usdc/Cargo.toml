@@ -1,0 +1,25 @@
+[package]
+name = "mock-usdc"
+description = "Testnet-only USDC stand-in that anyone can mint"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/CharlesChinedum/payday"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+near-sdk = "5.30"
+near-contract-standards = "5.30"
+
+[profile.release]
+codegen-units = 1
+opt-level = "z"
+lto = true
+debug = false
+panic = "abort"
+overflow-checks = true
+
+[dev-dependencies]
+near-sdk = { version = "5.30", features = ["unit-testing"] }
