@@ -24,7 +24,8 @@ Workers also wait a whole month to be paid for work they did on day one.
 | NEAR feature | What it does in Payday |
 |---|---|
 | NEP-141 USDC (Circle, native) | The salary token. Funding uses `ft_transfer_call`, so funding and stream creation are one atomic step. |
-| Meta transactions (NEP-366) | Workers sign; the relayer submits and pays gas. The relayer only accepts calls to the Payday contract. |
+| Meta transactions (NEP-366) | Users sign a delegate action in the browser; the Payday relayer submits it and pays the gas. The relayer only sponsors an allowlist of calls (see below). |
+| Implicit accounts | Each browser makes its own ed25519 key; its account is the key's hex. Payday creates it once with 0.005 NEAR, so nobody installs a wallet or buys NEAR. |
 | NEAR Intents, 1Click API | Cross-chain cash-out from NEAR USDC to USDC/USDT on other chains. |
 
 ## Status
@@ -33,13 +34,15 @@ This table is kept up to date as the build progresses. Only rows marked **Done**
 
 | Part | Status |
 |---|---|
-| Streaming contract (Rust, `contract/`) | **Done** — 27 unit tests + 5 sandbox integration tests |
+| Streaming contract (Rust, `contract/`) | **Done** — 29 unit tests + 5 sandbox integration tests |
 | Mock USDC for testnet (`mock-usdc/`) | **Done** — standard NEP-141, public `mint` (testnet only) |
 | Testnet deployment | **Done** — see addresses below |
-| Gasless relayer (`relayer/`) | Not started |
-| Web app (`web/`) | Not started |
-| 1Click cash-out | Not started |
-| CSV export | Not started |
+| Gasless relayer (`web/src/app/api/relay`) | **Done** — allowlisted meta transactions, tested on testnet |
+| Web app (`web/`) | **Done** — employer and worker pages, runs locally against testnet |
+| 1Click cash-out | **Quotes done** — live mainnet quotes on testnet; real swaps need the mainnet deploy |
+| CSV export | **Done** — per-stream accountant export |
+| Hosted demo | Not started |
+| Mainnet deployment | Not started |
 
 ## Live on testnet
 
@@ -58,6 +61,17 @@ A full run of `scripts/testnet.sh demo` on testnet:
 
 Afterwards the balances add up to exactly the 3,000 USDC funded: employer refund 1,997.190631 + Alice 1.401987 + held for Alice and Bob 1,001.407382.
 
+The same flow from the web app, every step gas-free for the user (the relayer `relayer.payday-dev.testnet` pays):
+
+| Step | Transaction | Relayer paid |
+|---|---|---|
+| Employer gets 5,000 test USDC | [`8tjRQudH…`](https://testnet.nearblocks.io/txns/8tjRQudHGCCVzbaGNSCjdZaQ1oRqikGmMJsPZTcsbGim) | 0.00028 NEAR |
+| Employer funds a 600 USDC stream from a CSV | [`HSxjnGc7…`](https://testnet.nearblocks.io/txns/HSxjnGc737EY7na2ro79iFRFpBMJ6qhmjaGzQuzAxiKs) | 0.00094 NEAR |
+| Worker withdraws earned salary | [`4mwKhaHb…`](https://testnet.nearblocks.io/txns/4mwKhaHbkNEA8tGt35b5K42D9cwJEaLbujZ6pym5HZC6) | 0.00067 NEAR |
+| Employer cancels a stream | [`9qYbKwtV…`](https://testnet.nearblocks.io/txns/9qYbKwtVzbtXXuYCMPsZYGbWYsCshNrnCtUdqarm1TgW) | 0.00067 NEAR |
+
+Creating a user's account costs the relayer about 0.012 NEAR once (0.005 NEAR seed plus the account-creation fee).
+
 ## Try it
 
 > Every step is "do X → see Y". More steps are added as each part lands.
@@ -71,13 +85,13 @@ scripts/build.sh
 cd contract && cargo test
 ```
 
-You should see `27 passed` (unit) and `5 passed` (integration). The integration tests start a local NEAR sandbox, deploy both contracts and check, with real cross-contract calls:
+You should see `29 passed` (unit) and `5 passed` (integration). The integration tests start a local NEAR sandbox, deploy both contracts and check, with real cross-contract calls:
 
 - funding two streams in one `ft_transfer_call`, and the workers being registered with the token automatically;
 - a worker withdrawing and receiving exactly what the stream says;
 - a funding transfer whose stream amounts do not add up being refunded in full;
 - a different token being refunded in full;
-- a withdrawal to an account the token does not know failing and being credited back, after which a normal withdrawal works;
+- a withdrawal to an account the token does not know (like a fresh 1Click deposit address) registering it and paying it;
 - a cancel splitting the deposit exactly between employer and worker.
 
 ### 2. Read the live contract
@@ -90,7 +104,31 @@ near contract call-function as-read-only app.payday-dev.testnet streams_of json-
 
 You should see Alice's stream with a `withdrawable` amount that grows every time you run it.
 
-### 3. Run the flow on your own testnet account
+### 3. Use the web app
+
+Requirements: Node 20+ and pnpm. You need a funded testnet account for the relayer (create one with `near account create-account sponsor-by-faucet-service`).
+
+```bash
+cd web
+cp .env.example .env.local   # set RELAYER_ACCOUNT_ID and RELAYER_PRIVATE_KEY
+pnpm install
+pnpm dev
+```
+
+1. Open http://localhost:3000/worker. You should see "Your Payday account" with a 64-character id. Copy it.
+2. Open http://localhost:3000/employer and click **Get 5,000 test USDC**. The balance shows 5,000.00.
+3. Click **Add my worker account** (or paste `worker,amount,start,end` rows), then **Fund**. The activity log shows "Funded 1 worker" with a transaction link, and the stream appears under "Streams you pay".
+4. Back on /worker, the balance ticks up every second. Click **Withdraw**: "Withdrew … no gas paid", and "In your account" goes up.
+5. Under **Cash out to another chain**, pick a destination, paste an address and an amount, and click **Get quote**. You get a live NEAR Intents price for that route.
+6. On /employer, **Cancel** refunds the unearned part; **Export CSV** downloads a file with paid out / earned / not yet earned per stream.
+
+```bash
+cd web && pnpm test
+```
+
+You should see `23 passed`: the relayer allowlist, signed-delegate decoding (including a byte-identical re-encode, so relayed signatures stay valid), reading results from events, USDC amount parsing, vesting maths that match the contract, and the payroll and accountant CSVs.
+
+### 4. Run the flow on your own testnet account
 
 ```bash
 ROOT=<your-account>.testnet scripts/testnet.sh deploy
@@ -98,6 +136,24 @@ ROOT=<your-account>.testnet scripts/testnet.sh demo
 ```
 
 `deploy` creates `usdc.`, `app.`, `alice.` and `bob.` sub-accounts (about 5.6 testnet NEAR) and deploys both contracts. `demo` mints 3,000 mock USDC, funds two streams, withdraws for Alice, cancels Bob's stream and prints every balance.
+
+## The relayer
+
+`POST /api/relay` takes a base64 signed delegate action, decodes it and sponsors it only if it is exactly one function call matching this allowlist:
+
+| Receiver | Method | Max gas | Deposit | Extra rule |
+|---|---|---|---|---|
+| Payday | `withdraw` | 50 Tgas | 0 | |
+| Payday | `claim_owed` | 30 Tgas | 0 | |
+| Payday | `cancel` | 40 Tgas | 0 | |
+| USDC | `ft_transfer_call` | 250 Tgas | 1 yoctoNEAR | `receiver_id` must be Payday |
+| USDC | `mint` (testnet only) | 30 Tgas | 0 | only to the signer |
+
+Requests are rate-limited per sender and per IP. `POST /api/onboard` creates a browser key's implicit account once; a burst of requests for the same key seeds it once.
+
+A relayed transaction's own status only covers the delegate wrapper, so the app reads success from the contracts' NEP-297 events in every receipt (`stream_created`, `withdrawn`, `stream_canceled`, …) and shows the contract's own error message when a receipt fails.
+
+**Known limits (testnet build):** rate limits and the onboarding memory live in one server process; a multi-instance deployment needs shared storage. On testnet the mock USDC is free to mint, so someone could create many small streams and spend Payday's NEAR on worker registrations; on mainnet each stream costs at least 1 real USDC.
 
 ## Contract design
 
@@ -107,13 +163,13 @@ A stream records: employer, worker, deposit, amount withdrawn, start and stop ti
 - **Withdrawable** = earned − withdrawn.
 - **Funding**: the employer calls `ft_transfer_call` on the USDC contract with a JSON `msg` listing the streams. The stream amounts must add up to exactly the USDC sent, or the whole transfer is refunded. Only the configured USDC contract is accepted.
 - **Workers need no NEAR**: when a stream is funded, Payday registers the worker with the token contract (NEP-145 `storage_deposit`, 0.00125 NEAR paid by Payday; the token refunds it if the worker is already registered). Funding accepts up to 25 streams per transfer and needs 300 Tgas.
-- **Withdraw**: `withdraw(stream_id, amount?, receiver?)`. `amount` defaults to everything withdrawable. Without `receiver` the USDC goes to the worker; with it, the USDC goes to that account, e.g. a 1Click deposit address for cross-chain cash-out. Needs about 25 Tgas; attach 40.
+- **Withdraw**: `withdraw(stream_id, amount?, receiver?)`. `amount` defaults to everything withdrawable. Without `receiver` the USDC goes to the worker. With it, Payday first registers the receiver with the token (a fresh 1Click deposit address is not registered with USDC — checked on mainnet), then pays it; withdrawals to another account must be at least 1 USDC so relayed calls cannot cheaply spend Payday's NEAR. Attach 40 Tgas, or 50 with a `receiver`.
 - **Cancel**: employer or worker. The employer is refunded the unearned part; the worker's earned part stays withdrawable.
 - **Failed transfers**: NEAR transfers are asynchronous. If a USDC transfer fails after the contract has updated its books, a callback credits the amount back so nothing is lost. If the stream no longer exists, the amount is credited to an `owed` balance that the account can claim with `claim_owed`.
 
 ## Prior work and what is new
 
-Payday's streaming maths and cancel rules are ported from my earlier Solidity project [payment-streams](https://github.com/CharlesChinedum/payment-streams) (ERC-20, Foundry). Everything in this repository was written during NEAR HACKATHON (Nov 2026): the Rust contract, the testnet mock USDC, the NEAR-specific async transfer handling, automatic worker registration, batch funding through `ft_transfer_call`, the gasless relayer, the 1Click cash-out and the web app.
+Payday's streaming maths and cancel rules are ported from my earlier Solidity project [payment-streams](https://github.com/CharlesChinedum/payment-streams) (ERC-20, Foundry). Everything in this repository was written during NEAR HACKATHON (Nov 2026): the Rust contract, the testnet mock USDC, the NEAR-specific async transfer handling, automatic worker and receiver registration, batch funding through `ft_transfer_call`, the gasless relayer, the 1Click cash-out and the web app.
 
 ## License
 
