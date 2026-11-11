@@ -1,45 +1,81 @@
-export type NetworkId = "testnet" | "mainnet";
+export type NetworkId = "testnet" | "mainnet" | "localnet";
 
 export interface NetworkConfig {
   networkId: NetworkId;
   rpcUrl: string;
   payday: string;
   usdc: string;
-  explorer: string;
+  /** Block explorer, if the network has one. */
+  explorer: string | null;
   /** Mainnet asset id of the token workers cash out from (1Click `originAsset`). */
   originAsset: string;
+  /** Test networks mint mock USDC through `/api/faucet`. */
+  hasFaucet: boolean;
   /** A long-running public stream the landing page shows live, where one exists. */
   demoStreamId?: number;
 }
 
-const NETWORKS: Record<NetworkId, NetworkConfig> = {
-  testnet: {
-    networkId: "testnet",
-    rpcUrl: "https://test.rpc.fastnear.com",
-    payday: "app.payday-dev.testnet",
-    usdc: "usdc.payday-dev.testnet",
-    explorer: "https://testnet.nearblocks.io",
-    originAsset: "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
-    demoStreamId: 1,
-  },
-  mainnet: {
-    networkId: "mainnet",
-    rpcUrl: "https://free.rpc.fastnear.com",
-    payday: process.env.NEXT_PUBLIC_PAYDAY_MAINNET ?? "",
-    usdc: "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
-    explorer: "https://nearblocks.io",
-    originAsset: "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
-  },
-};
+const MAINNET_USDC = "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1";
+const ORIGIN_ASSET = `nep141:${MAINNET_USDC}`;
 
-const networkId = (process.env.NEXT_PUBLIC_NETWORK as NetworkId | undefined) ?? "testnet";
+// Next.js inlines NEXT_PUBLIC_* only where they are written out literally, so each is
+// read here by name rather than through a helper.
+function buildConfig(): NetworkConfig {
+  const networkId = process.env.NEXT_PUBLIC_NETWORK ?? "testnet";
+  switch (networkId) {
+    case "testnet":
+      return {
+        networkId,
+        rpcUrl: "https://test.rpc.fastnear.com",
+        payday: "app.payday-dev.testnet",
+        usdc: "usdc.payday-dev.testnet",
+        explorer: "https://testnet.nearblocks.io",
+        originAsset: ORIGIN_ASSET,
+        hasFaucet: true,
+        demoStreamId: 1,
+      };
+    case "mainnet":
+      return {
+        networkId,
+        rpcUrl: process.env.NEXT_PUBLIC_RPC_URL || "https://free.rpc.fastnear.com",
+        payday: required("NEXT_PUBLIC_PAYDAY", process.env.NEXT_PUBLIC_PAYDAY),
+        usdc: MAINNET_USDC,
+        explorer: "https://nearblocks.io",
+        originAsset: ORIGIN_ASSET,
+        hasFaucet: false,
+      };
+    case "localnet":
+      return {
+        networkId,
+        rpcUrl: required("NEXT_PUBLIC_RPC_URL", process.env.NEXT_PUBLIC_RPC_URL),
+        payday: required("NEXT_PUBLIC_PAYDAY", process.env.NEXT_PUBLIC_PAYDAY),
+        usdc: required("NEXT_PUBLIC_USDC", process.env.NEXT_PUBLIC_USDC),
+        explorer: null,
+        originAsset: ORIGIN_ASSET,
+        hasFaucet: true,
+      };
+    default:
+      throw new Error(`NEXT_PUBLIC_NETWORK must be testnet, mainnet or localnet, not "${networkId}"`);
+  }
+}
 
-export const config: NetworkConfig = NETWORKS[networkId];
+function required(name: string, value: string | undefined): string {
+  if (!value) throw new Error(`${name} must be set for this network`);
+  return value;
+}
+
+export const config: NetworkConfig = buildConfig();
 
 export const USDC_DECIMALS = 6;
 export const ONE_USDC = 1_000_000n;
 export const ONE_YOCTO = 1n;
 export const TGAS = 1_000_000_000_000n;
+
+/** Gas each relayed call attaches; the relayer's policy allows exactly these maxima. */
+export const GAS_TGAS = {
+  payout: 100,
+  funding: 150,
+} as const;
 
 /** Destinations a worker can cash out to through NEAR Intents 1Click. */
 export const CASH_OUT_ASSETS = [
@@ -52,10 +88,10 @@ export const CASH_OUT_ASSETS = [
 
 export type CashOutAsset = (typeof CASH_OUT_ASSETS)[number];
 
-export function txUrl(hash: string): string {
-  return `${config.explorer}/txns/${hash}`;
+export function txUrl(hash: string): string | null {
+  return config.explorer && `${config.explorer}/txns/${hash}`;
 }
 
-export function accountUrl(accountId: string): string {
-  return `${config.explorer}/address/${accountId}`;
+export function accountUrl(accountId: string): string | null {
+  return config.explorer && `${config.explorer}/address/${accountId}`;
 }

@@ -9,7 +9,7 @@ import { getStream } from "@/lib/near";
 import { ArrowUpRightIcon } from "../icons";
 import { LiveAmount } from "../LiveAmount";
 import { fmtDate, progress, ratePerDay, statusOf } from "../StreamMath";
-import { Pill, ProgressBar, Skeleton, shortId } from "../ui";
+import { ExplorerLink, Pill, ProgressBar, Skeleton, shortId } from "../ui";
 
 type Load = { status: "loading" } | { status: "missing" } | { status: "ready"; stream: StreamRecord };
 
@@ -40,15 +40,13 @@ function StreamCard({ stream }: { stream: StreamRecord }) {
         <Pill tone={status === "streaming" ? "live" : "neutral"}>
           {status === "streaming" ? "Streaming now" : status === "scheduled" ? "Scheduled" : "Finished"}
         </Pill>
-        <a
+        <ExplorerLink
           href={accountUrl(config.payday)}
-          target="_blank"
-          rel="noreferrer"
-          className="num inline-flex items-center gap-1 text-xs text-muted underline decoration-border underline-offset-4 hover:text-text"
+          className="num inline-flex items-center gap-1 text-xs text-muted hover:text-text"
         >
           {config.payday}
           <ArrowUpRightIcon width={12} height={12} />
-        </a>
+        </ExplorerLink>
       </div>
 
       <p className="mt-5 text-xs font-medium uppercase tracking-wider text-muted">Earned so far, stream #{stream.id}</p>

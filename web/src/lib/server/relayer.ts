@@ -1,12 +1,21 @@
 import "server-only";
-import { Account, JsonRpcProvider, PublicKey, type KeyPairString } from "near-api-js";
+import { Account, JsonRpcProvider, PublicKey, parseNearAmount, type KeyPairString } from "near-api-js";
 import { config } from "../config";
+import { viewAccount } from "./chain";
+import { HttpError } from "./http";
 
-export const provider = new JsonRpcProvider({ url: config.rpcUrl });
+const provider = new JsonRpcProvider({ url: config.rpcUrl });
+
+/** Below this the relayer stops paying for anything: a global stop no attacker resets. */
+const BALANCE_FLOOR = BigInt(parseNearAmount(Number(process.env.RELAYER_MIN_BALANCE_NEAR || "0.5"))!);
+const BALANCE_CACHE_MS = 20_000;
+
+/** `ed25519:` plus 32 bytes in base58, checked before any decoding. */
+const PUBLIC_KEY = /^ed25519:[1-9A-HJ-NP-Za-km-z]{43,44}$/;
 
 let relayer: Account | undefined;
 
-export function relayerAccount(): Account {
+function relayerAccount(): Account {
   if (relayer) return relayer;
   const accountId = process.env.RELAYER_ACCOUNT_ID;
   const key = process.env.RELAYER_PRIVATE_KEY as KeyPairString | undefined;
@@ -15,40 +24,35 @@ export function relayerAccount(): Account {
   return relayer;
 }
 
-/** The implicit account id controlled by an ed25519 public key: its 32 bytes in hex. */
-export function implicitAccountId(publicKey: string): string {
-  const key = PublicKey.fromString(publicKey);
-  if (!key.ed25519Key) throw new Error("Only ed25519 keys are supported");
-  return Buffer.from(key.ed25519Key.data).toString("hex");
-}
+let balanceCheck: { at: number; ok: boolean } | undefined;
 
-export async function accountExists(accountId: string): Promise<boolean> {
-  try {
-    await provider.viewAccount({ accountId, blockQuery: { finality: "final" } });
-    return true;
-  } catch {
-    return false;
+/**
+ * Refuses to spend when the relayer is below its floor. Read from the chain, so it holds
+ * across every server instance; cached briefly so it is not one RPC call per request.
+ */
+async function assertAboveFloor() {
+  const now = Date.now();
+  if (!balanceCheck || now - balanceCheck.at > BALANCE_CACHE_MS) {
+    const state = await viewAccount(relayerAccount().accountId);
+    balanceCheck = { at: now, ok: !!state && state.amount >= BALANCE_FLOOR };
+  }
+  if (!balanceCheck.ok) {
+    throw new HttpError(503, "Payday's relayer is paused while it is topped up. Please try again later.");
   }
 }
 
-/**
- * Fixed-window limiter, per process. Enough to stop a single client from draining the
- * relayer in a hackathon deployment; a production relayer needs shared storage.
- */
-export function rateLimiter(limit: number, windowMs: number) {
-  const hits = new Map<string, { count: number; reset: number }>();
-  return (key: string): boolean => {
-    const now = Date.now();
-    const entry = hits.get(key);
-    if (!entry || entry.reset <= now) {
-      hits.set(key, { count: 1, reset: now + windowMs });
-      return true;
-    }
-    entry.count += 1;
-    return entry.count <= limit;
-  };
+/** Every way the relayer spends goes through here, behind the balance floor. */
+export async function spend<T>(work: (relayer: Account) => Promise<T>): Promise<T> {
+  await assertAboveFloor();
+  return work(relayerAccount());
 }
 
-export function clientIp(req: Request): string {
-  return req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
+/** The implicit account id controlled by an ed25519 public key: its 32 bytes in hex. */
+export function implicitAccountId(publicKey: unknown): string {
+  if (typeof publicKey !== "string" || !PUBLIC_KEY.test(publicKey)) {
+    throw new HttpError(400, "publicKey must be an ed25519 public key");
+  }
+  const key = PublicKey.fromString(publicKey);
+  if (!key.ed25519Key) throw new HttpError(400, "publicKey must be an ed25519 public key");
+  return Buffer.from(key.ed25519Key.data).toString("hex");
 }

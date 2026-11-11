@@ -1,4 +1,5 @@
-import { ONE_YOCTO, TGAS } from "./config";
+import { isNearAccountId } from "./address";
+import { GAS_TGAS, ONE_USDC, ONE_YOCTO, TGAS } from "./config";
 
 /** One function call inside a signed delegate action, already decoded. */
 export interface DelegateCall {
@@ -11,6 +12,10 @@ export interface DelegateCall {
 export interface DelegateSummary {
   senderId: string;
   receiverId: string;
+  /** `ed25519:…` of the signing key, or null for any other key type. */
+  publicKey: string | null;
+  nonce: bigint;
+  maxBlockHeight: bigint;
   /** null for any action that is not a function call. */
   calls: Array<DelegateCall | null>;
 }
@@ -18,50 +23,156 @@ export interface DelegateSummary {
 export interface PolicyContext {
   payday: string;
   usdc: string;
-  /** Allow minting the mock token (testnet only). */
-  allowMint: boolean;
 }
 
-export type PolicyResult = { ok: true } | { ok: false; reason: string };
+export interface StreamRequest {
+  worker: string;
+  amount: bigint;
+  start: number;
+  stop: number;
+}
+
+/** A sponsored call, parsed and typed, ready for the on-chain pre-flight. */
+export type SponsoredCall =
+  | { kind: "withdraw"; streamId: number; amount: bigint | null; receiver: string | null }
+  | { kind: "claim_owed"; receiver: string | null }
+  | { kind: "cancel"; streamId: number }
+  | { kind: "fund"; amount: bigint; streams: StreamRequest[] }
+  | { kind: "send"; amount: bigint; sendTo: string };
+
+export type PolicyResult = { ok: true; call: SponsoredCall } | { ok: false; reason: string };
+
+type Args = Record<string, unknown>;
+type Parsed = SponsoredCall | string;
 
 interface Rule {
   maxGas: bigint;
   deposit: bigint;
-  check?: (args: Record<string, unknown>, senderId: string, ctx: PolicyContext) => string | null;
+  /** Exactly these keys may appear; `required` ones must. */
+  keys: readonly string[];
+  required: readonly string[];
+  parse: (args: Args, ctx: PolicyContext) => Parsed;
+}
+
+const MAX_STREAMS = 25;
+const MAX_MSG_BYTES = 6 * 1024;
+const U128 = /^(0|[1-9]\d{0,38})$/;
+
+const payoutGas = BigInt(GAS_TGAS.payout) * TGAS;
+const fundingGas = BigInt(GAS_TGAS.funding) * TGAS;
+
+function streamId(value: unknown): number | null {
+  return Number.isSafeInteger(value) && (value as number) >= 1 ? (value as number) : null;
+}
+
+function amountOf(value: unknown): bigint | null {
+  return typeof value === "string" && U128.test(value) ? BigInt(value) : null;
+}
+
+function accountOf(value: unknown): string | null {
+  return typeof value === "string" && isNearAccountId(value) ? value : null;
+}
+
+function optional<T>(args: Args, key: string, parse: (v: unknown) => T | null): T | null | undefined {
+  if (!(key in args) || args[key] === null) return null;
+  return parse(args[key]) ?? undefined;
+}
+
+function parseStream(raw: unknown): StreamRequest | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const r = raw as Args;
+  if (Object.keys(r).sort().join() !== "amount,start,stop,worker") return null;
+  const worker = accountOf(r.worker);
+  const amount = amountOf(r.amount);
+  const start = Number.isSafeInteger(r.start) ? (r.start as number) : null;
+  const stop = Number.isSafeInteger(r.stop) ? (r.stop as number) : null;
+  if (!worker || amount === null || start === null || stop === null) return null;
+  return { worker, amount, start, stop };
+}
+
+/** `ft_transfer_call` to Payday: either fund streams or send through Payday. */
+function parseTransferCall(args: Args, ctx: PolicyContext): Parsed {
+  if (args.receiver_id !== ctx.payday) return "Token transfers may only go to Payday";
+  const amount = amountOf(args.amount);
+  if (amount === null || amount < ONE_USDC) return "Transfers must be at least 1 USDC";
+  if (typeof args.msg !== "string" || args.msg.length > MAX_MSG_BYTES) return "Invalid msg";
+  let msg: unknown;
+  try {
+    msg = JSON.parse(args.msg);
+  } catch {
+    return "Invalid msg";
+  }
+  if (typeof msg !== "object" || msg === null) return "Invalid msg";
+  const keys = Object.keys(msg);
+  const m = msg as Args;
+  if (keys.length === 1 && keys[0] === "send_to") {
+    const sendTo = accountOf(m.send_to);
+    return sendTo ? { kind: "send", amount, sendTo } : "Invalid send_to";
+  }
+  if (keys.length === 1 && keys[0] === "streams" && Array.isArray(m.streams)) {
+    if (m.streams.length < 1 || m.streams.length > MAX_STREAMS) return `Fund 1 to ${MAX_STREAMS} streams at a time`;
+    const streams = m.streams.map(parseStream);
+    if (streams.some((s) => s === null)) return "Invalid stream in msg";
+    return { kind: "fund", amount, streams: streams as StreamRequest[] };
+  }
+  return "msg needs exactly one of streams or send_to";
 }
 
 const PAYDAY_RULES: Record<string, Rule> = {
-  withdraw: { maxGas: 50n * TGAS, deposit: 0n },
-  claim_owed: { maxGas: 30n * TGAS, deposit: 0n },
-  cancel: { maxGas: 40n * TGAS, deposit: 0n },
+  withdraw: {
+    maxGas: payoutGas,
+    deposit: 0n,
+    keys: ["stream_id", "amount", "receiver"],
+    required: ["stream_id"],
+    parse: (args) => {
+      const id = streamId(args.stream_id);
+      const amount = optional(args, "amount", amountOf);
+      const receiver = optional(args, "receiver", accountOf);
+      if (id === null || amount === undefined || receiver === undefined) return "Invalid withdraw arguments";
+      return { kind: "withdraw", streamId: id, amount, receiver };
+    },
+  },
+  claim_owed: {
+    maxGas: payoutGas,
+    deposit: 0n,
+    keys: ["receiver"],
+    required: [],
+    parse: (args) => {
+      const receiver = optional(args, "receiver", accountOf);
+      return receiver === undefined ? "Invalid receiver" : { kind: "claim_owed", receiver };
+    },
+  },
+  cancel: {
+    maxGas: payoutGas,
+    deposit: 0n,
+    keys: ["stream_id"],
+    required: ["stream_id"],
+    parse: (args) => {
+      const id = streamId(args.stream_id);
+      return id === null ? "Invalid stream_id" : { kind: "cancel", streamId: id };
+    },
+  },
 };
 
 const TOKEN_RULES: Record<string, Rule> = {
   ft_transfer_call: {
-    maxGas: 250n * TGAS,
+    maxGas: fundingGas,
     deposit: ONE_YOCTO,
-    check: (args, _sender, ctx) =>
-      args.receiver_id === ctx.payday ? null : "Token transfers may only fund Payday",
-  },
-  mint: {
-    maxGas: 30n * TGAS,
-    deposit: 0n,
-    check: (args, senderId, ctx) => {
-      if (!ctx.allowMint) return "Minting is disabled on this network";
-      return args.account_id === senderId ? null : "You can only mint to yourself";
-    },
+    keys: ["receiver_id", "amount", "msg", "memo"],
+    required: ["receiver_id", "amount", "msg"],
+    parse: parseTransferCall,
   },
 };
 
 const fail = (reason: string): PolicyResult => ({ ok: false, reason });
 
 /**
- * Decides whether the relayer pays for a signed delegate action. The relayer only
- * sponsors single function calls to Payday, or to the token when they fund Payday.
+ * Decides, from the delegate alone, whether it is a call the relayer sponsors: a single
+ * function call to Payday, or a USDC transfer to Payday, with capped gas, an exact
+ * deposit and strictly shaped arguments. On-chain checks follow in the pre-flight.
  */
 export function checkDelegate(d: DelegateSummary, ctx: PolicyContext): PolicyResult {
-  const rules =
-    d.receiverId === ctx.payday ? PAYDAY_RULES : d.receiverId === ctx.usdc ? TOKEN_RULES : null;
+  const rules = d.receiverId === ctx.payday ? PAYDAY_RULES : d.receiverId === ctx.usdc ? TOKEN_RULES : null;
   if (!rules) return fail(`Receiver ${d.receiverId} is not sponsored`);
   if (d.calls.length !== 1) return fail("Exactly one action is sponsored per request");
 
@@ -73,10 +184,15 @@ export function checkDelegate(d: DelegateSummary, ctx: PolicyContext): PolicyRes
   if (call.gas > rule.maxGas) return fail(`Gas above ${rule.maxGas / TGAS} Tgas`);
   if (call.deposit !== rule.deposit) return fail(`Deposit must be ${rule.deposit} yoctoNEAR`);
 
-  if (rule.check) {
-    if (typeof call.args !== "object" || call.args === null) return fail("Arguments must be JSON");
-    const reason = rule.check(call.args as Record<string, unknown>, d.senderId, ctx);
-    if (reason) return fail(reason);
+  if (typeof call.args !== "object" || call.args === null || Array.isArray(call.args)) {
+    return fail("Arguments must be a JSON object");
   }
-  return { ok: true };
+  const args = call.args as Args;
+  const extra = Object.keys(args).find((k) => !rule.keys.includes(k));
+  if (extra) return fail(`Unexpected argument ${extra}`);
+  const missing = rule.required.find((k) => !(k in args));
+  if (missing) return fail(`Missing argument ${missing}`);
+
+  const parsed = rule.parse(args, ctx);
+  return typeof parsed === "string" ? fail(parsed) : { ok: true, call: parsed };
 }

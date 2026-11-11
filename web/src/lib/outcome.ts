@@ -15,8 +15,11 @@ export interface TxOutcome {
 }
 
 interface ReceiptOutcome {
-  outcome: { logs: string[]; status: unknown };
+  outcome: { logs: string[]; status: unknown; executor_id?: string };
 }
+
+/** Which account may emit events of each standard: anything else is ignored. */
+export type Emitters = Record<string, string>;
 
 interface RawResult {
   transaction: { hash: string };
@@ -38,20 +41,23 @@ function failureOf(status: unknown): unknown {
 
 /**
  * A relayed meta transaction's own status only covers the delegate wrapper, so success is
- * read from the contracts' events and from failures in any receipt.
+ * read from the contracts' events and from failures in any receipt. An event counts only
+ * if the receipt that logged it ran on the account `emitters` names for its standard.
  */
-export function summarizeOutcome(res: RawResult): TxOutcome {
+export function summarizeOutcome(res: RawResult, emitters: Emitters): TxOutcome {
   const receipts = res.receipts_outcome ?? [];
   const events: ChainEvent[] = [];
   const failures: string[] = [];
   for (const r of receipts) {
     for (const log of r.outcome.logs) {
       if (!log.startsWith(PREFIX)) continue;
+      let event: ChainEvent;
       try {
-        events.push(JSON.parse(log.slice(PREFIX.length)));
+        event = JSON.parse(log.slice(PREFIX.length));
       } catch {
-        // Ignore malformed logs; they are not events.
+        continue; // malformed logs are not events
       }
+      if (emitters[event.standard] === r.outcome.executor_id) events.push(event);
     }
     const failure = failureOf(r.outcome.status);
     if (failure !== undefined) failures.push(failureMessage(failure));

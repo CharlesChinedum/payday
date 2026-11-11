@@ -5,7 +5,7 @@ import { ArrowRightIcon, ArrowUpRightIcon } from "@/components/icons";
 import { HeroPayslip } from "@/components/landing/HeroPayslip";
 import { LiveStream } from "@/components/landing/LiveStream";
 import { PayCurve } from "@/components/landing/PayCurve";
-import { CASH_OUT_ASSETS, txUrl } from "@/lib/config";
+import { CASH_OUT_ASSETS } from "@/lib/config";
 
 const STEPS = [
   {
@@ -25,6 +25,8 @@ const STEPS = [
     body: "Through NEAR Intents the same withdrawal can land as USDC on Base, Solana, Arbitrum or Ethereum, or USDT on Tron.",
   },
 ];
+
+const TESTNET_EXPLORER = "https://testnet.nearblocks.io";
 
 /** Transactions made from this app on NEAR testnet on 11 Nov 2026, with what the relayer paid. */
 const RECEIPTS = [
@@ -164,7 +166,7 @@ function Proof() {
               <span className="flex-1">{r.action}</span>
               <span className="num text-muted">{r.relayerNear} NEAR</span>
               <a
-                href={txUrl(r.hash)}
+                href={`${TESTNET_EXPLORER}/txns/${r.hash}`}
                 target="_blank"
                 rel="noreferrer"
                 aria-label={`View transaction ${r.hash}`}

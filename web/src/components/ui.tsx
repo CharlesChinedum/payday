@@ -114,34 +114,56 @@ export function CopyButton({ value, label = "Copy" }: { value: string; label?: s
   );
 }
 
+/** A link to the network's explorer, or plain text on a network without one. */
+export function ExplorerLink({
+  href,
+  title,
+  className = "",
+  children,
+}: {
+  href: string | null;
+  title?: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  if (!href) {
+    return (
+      <span title={title} className={className}>
+        {children}
+      </span>
+    );
+  }
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      title={title}
+      className={`underline decoration-border underline-offset-4 hover:decoration-text ${className}`}
+    >
+      {children}
+    </a>
+  );
+}
+
 export function AccountChip({ id }: { id: string }) {
   return (
     <span className="inline-flex flex-wrap items-center gap-2">
-      <a
-        href={accountUrl(id)}
-        target="_blank"
-        rel="noreferrer"
-        title={id}
-        className="num text-sm underline decoration-border underline-offset-4 hover:decoration-text"
-      >
+      <ExplorerLink href={accountUrl(id)} title={id} className="num text-sm">
         {shortId(id)}
-      </a>
+      </ExplorerLink>
       <CopyButton value={id} />
     </span>
   );
 }
 
 export function TxLink({ hash }: { hash: string }) {
+  const href = txUrl(hash);
   return (
-    <a
-      href={txUrl(hash)}
-      target="_blank"
-      rel="noreferrer"
-      className="num inline-flex items-center gap-0.5 underline decoration-border underline-offset-4 hover:decoration-text"
-    >
+    <ExplorerLink href={href} title={hash} className="num inline-flex items-center gap-0.5">
       {hash.slice(0, 8)}…
-      <ArrowUpRightIcon width={12} height={12} />
-    </a>
+      {href && <ArrowUpRightIcon width={12} height={12} />}
+    </ExplorerLink>
   );
 }
 
