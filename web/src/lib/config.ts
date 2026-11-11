@@ -8,6 +8,8 @@ export interface NetworkConfig {
   explorer: string;
   /** Mainnet asset id of the token workers cash out from (1Click `originAsset`). */
   originAsset: string;
+  /** A long-running public stream the landing page shows live, where one exists. */
+  demoStreamId?: number;
 }
 
 const NETWORKS: Record<NetworkId, NetworkConfig> = {
@@ -18,6 +20,7 @@ const NETWORKS: Record<NetworkId, NetworkConfig> = {
     usdc: "usdc.payday-dev.testnet",
     explorer: "https://testnet.nearblocks.io",
     originAsset: "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+    demoStreamId: 1,
   },
   mainnet: {
     networkId: "mainnet",

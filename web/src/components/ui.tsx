@@ -1,14 +1,25 @@
 "use client";
 
-import { useState, type ButtonHTMLAttributes, type ReactNode } from "react";
+import { useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from "react";
 import { accountUrl, txUrl } from "@/lib/config";
+import { ArrowUpRightIcon, CheckIcon, CopyIcon } from "./icons";
 
-export function Card({ title, aside, children }: { title?: string; aside?: ReactNode; children: ReactNode }) {
+export function Card({
+  title,
+  aside,
+  children,
+  className = "",
+}: {
+  title?: string;
+  aside?: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
   return (
-    <section className="rounded-xl border border-border bg-surface p-5">
+    <section className={`rounded-2xl border border-border bg-surface p-5 sm:p-6 ${className}`}>
       {(title || aside) && (
         <div className="mb-4 flex items-center justify-between gap-3">
-          {title && <h2 className="font-semibold">{title}</h2>}
+          {title && <h2 className="text-[15px] font-semibold tracking-tight">{title}</h2>}
           {aside}
         </div>
       )}
@@ -17,88 +28,168 @@ export function Card({ title, aside, children }: { title?: string; aside?: React
   );
 }
 
-export function Button({
-  variant = "primary",
-  className = "",
-  ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "secondary" | "danger" }) {
-  const styles = {
-    primary: "bg-accent text-accent-ink hover:opacity-90",
-    secondary: "border border-border bg-surface hover:bg-surface-2",
-    danger: "border border-border text-danger hover:bg-danger-soft",
-  }[variant];
+const BUTTON_VARIANTS = {
+  primary: "bg-accent text-accent-ink hover:brightness-110",
+  lime: "bg-lime text-lime-ink hover:brightness-105",
+  secondary: "border border-border bg-surface hover:bg-surface-2",
+  ghost: "text-muted hover:bg-surface-2 hover:text-text",
+  danger: "border border-border text-danger hover:bg-danger-soft",
+} as const;
+
+type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
+  variant?: keyof typeof BUTTON_VARIANTS;
+  loading?: boolean;
+};
+
+export function Button({ variant = "primary", loading = false, className = "", children, disabled, ...props }: ButtonProps) {
   return (
     <button
       {...props}
-      className={`rounded-lg px-3.5 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${styles} ${className}`}
-    />
+      disabled={disabled || loading}
+      aria-busy={loading}
+      className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition duration-150 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100 ${BUTTON_VARIANTS[variant]} ${className}`}
+    >
+      {loading && <Spinner />}
+      {children}
+    </button>
   );
+}
+
+function Spinner() {
+  return (
+    <svg viewBox="0 0 16 16" className="h-4 w-4 animate-spin" aria-hidden="true">
+      <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeOpacity="0.25" strokeWidth="2" />
+      <path d="M14 8a6 6 0 0 0-6-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+const PILL_TONES = {
+  live: "bg-accent-soft text-accent",
+  neutral: "bg-surface-2 text-muted",
+} as const;
+
+export function Pill({ tone = "neutral", children }: { tone?: keyof typeof PILL_TONES; children: ReactNode }) {
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${PILL_TONES[tone]}`}>
+      {tone === "live" && <LiveDot />}
+      {children}
+    </span>
+  );
+}
+
+/** `lime` is for dark, inverted surfaces where the accent would not stand out. */
+export function LiveDot({ tone = "accent" }: { tone?: "accent" | "lime" }) {
+  const color = tone === "lime" ? "bg-lime" : "bg-accent";
+  return <span className={`h-1.5 w-1.5 animate-live rounded-full ${color}`} aria-hidden="true" />;
+}
+
+export function Skeleton({ className = "" }: { className?: string }) {
+  return <div className={`skeleton ${className}`} aria-hidden="true" />;
 }
 
 export function shortId(id: string): string {
   return id.length > 24 ? `${id.slice(0, 8)}…${id.slice(-6)}` : id;
 }
 
-export function AccountChip({ id }: { id: string }) {
+const COPIED_MS = 1600;
+
+export function CopyButton({ value, label = "Copy" }: { value: string; label?: string }) {
   const [copied, setCopied] = useState(false);
+  async function copy() {
+    await navigator.clipboard.writeText(value);
+    setCopied(true);
+    setTimeout(() => setCopied(false), COPIED_MS);
+  }
   return (
-    <span className="inline-flex items-center gap-2">
-      <a href={accountUrl(id)} target="_blank" rel="noreferrer" className="num text-sm underline" title={id}>
+    <button
+      onClick={copy}
+      className={`inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-xs font-medium transition duration-150 active:scale-95 ${
+        copied ? "border-accent bg-accent-soft text-accent" : "border-border text-muted hover:text-text"
+      }`}
+    >
+      {copied ? <CheckIcon className="animate-pop" /> : <CopyIcon />}
+      {copied ? "Copied" : label}
+    </button>
+  );
+}
+
+export function AccountChip({ id }: { id: string }) {
+  return (
+    <span className="inline-flex flex-wrap items-center gap-2">
+      <a
+        href={accountUrl(id)}
+        target="_blank"
+        rel="noreferrer"
+        title={id}
+        className="num text-sm underline decoration-border underline-offset-4 hover:decoration-text"
+      >
         {shortId(id)}
       </a>
-      <button
-        className="rounded border border-border px-1.5 text-xs text-muted hover:text-text"
-        onClick={() => {
-          navigator.clipboard.writeText(id).then(() => {
-            setCopied(true);
-            setTimeout(() => setCopied(false), 1500);
-          });
-        }}
-      >
-        {copied ? "Copied" : "Copy"}
-      </button>
+      <CopyButton value={id} />
     </span>
   );
 }
 
 export function TxLink({ hash }: { hash: string }) {
   return (
-    <a href={txUrl(hash)} target="_blank" rel="noreferrer" className="num underline">
+    <a
+      href={txUrl(hash)}
+      target="_blank"
+      rel="noreferrer"
+      className="num inline-flex items-center gap-0.5 underline decoration-border underline-offset-4 hover:decoration-text"
+    >
       {hash.slice(0, 8)}…
+      <ArrowUpRightIcon width={12} height={12} />
     </a>
   );
 }
 
-export interface LogEntry {
-  at: number;
-  text: string;
-  txHash?: string;
-  error?: boolean;
+const NOTICE_TONES = {
+  info: "bg-accent-soft",
+  warn: "bg-warn-soft",
+  error: "bg-danger-soft text-danger",
+} as const;
+
+export function Notice({ tone = "info", children }: { tone?: keyof typeof NOTICE_TONES; children: ReactNode }) {
+  return <div className={`rounded-xl px-4 py-3 text-sm ${NOTICE_TONES[tone]}`}>{children}</div>;
 }
 
-export function ActivityLog({ entries }: { entries: LogEntry[] }) {
-  if (entries.length === 0) return null;
+export function TextInput({ className = "", ...props }: InputHTMLAttributes<HTMLInputElement>) {
   return (
-    <Card title="Activity">
-      <ul className="space-y-2 text-sm">
-        {entries.map((e) => (
-          <li key={e.at} className={e.error ? "text-danger" : ""}>
-            <span className="num mr-2 text-xs text-muted">{new Date(e.at).toLocaleTimeString()}</span>
-            {e.text}
-            {e.txHash && (
-              <>
-                {" · "}
-                <TxLink hash={e.txHash} />
-              </>
-            )}
-          </li>
-        ))}
-      </ul>
-    </Card>
+    <input
+      {...props}
+      className={`w-full rounded-xl border border-border bg-bg px-3.5 py-2.5 text-sm transition-shadow placeholder:text-muted/70 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/25 ${className}`}
+    />
   );
 }
 
-export function Notice({ tone = "info", children }: { tone?: "info" | "warn" | "error"; children: ReactNode }) {
-  const bg = { info: "bg-accent-soft", warn: "bg-warn-soft", error: "bg-danger-soft text-danger" }[tone];
-  return <div className={`rounded-lg px-3.5 py-2.5 text-sm ${bg}`}>{children}</div>;
+export function Field({ label, children, className = "" }: { label: string; children: ReactNode; className?: string }) {
+  return (
+    <label className={`block space-y-1.5 text-sm ${className}`}>
+      <span className="text-xs font-medium text-muted">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+export function Stat({ label, children, hint }: { label: string; children: ReactNode; hint?: ReactNode }) {
+  return (
+    <div>
+      <div className="text-xs font-medium uppercase tracking-wider text-muted">{label}</div>
+      <div className="mt-1.5 text-2xl font-semibold tracking-tight">{children}</div>
+      {hint && <div className="mt-1 text-xs text-muted">{hint}</div>}
+    </div>
+  );
+}
+
+export function ProgressBar({ fraction }: { fraction: number }) {
+  return (
+    <div className="h-1.5 overflow-hidden rounded-full bg-surface-2">
+      <div
+        className="h-full origin-left rounded-full bg-accent transition-transform duration-1000 ease-linear"
+        style={{ transform: `scaleX(${Math.min(1, Math.max(0, fraction))})` }}
+      />
+    </div>
+  );
 }

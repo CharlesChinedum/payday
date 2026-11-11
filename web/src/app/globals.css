@@ -1,34 +1,50 @@
 @import "tailwindcss";
 
 :root {
-  --bg: #f6f7f5;
-  --surface: #ffffff;
-  --surface-2: #f0f2ef;
-  --border: #e2e5e0;
-  --text: #15201b;
-  --muted: #5e6b64;
-  --accent: #0f7a55;
-  --accent-ink: #ffffff;
-  --accent-soft: #e3f3ec;
-  --danger: #b42318;
-  --danger-soft: #fdecea;
-  --warn-soft: #fff6e0;
+  --bg: #f4f1e8;
+  --surface: #fbfaf5;
+  --surface-2: #ebe7da;
+  --border: #dbd6c6;
+  --text: #0f1f19;
+  --muted: #5b655e;
+  --accent: #0a6847;
+  --accent-ink: #f6f3ea;
+  --accent-soft: #dcebdf;
+  --lime: #c6f26b;
+  --lime-ink: #1b2c0b;
+  --danger: #b3261e;
+  --danger-soft: #f8e3df;
+  --warn-soft: #f6ecc9;
+  /* The payslip is a physical object: it stays paper-coloured in both themes. */
+  /* The emphasis surface (balance hero, closing banner): dark in both themes so lime reads. */
+  --hero: #10231c;
+  --hero-ink: #f4f1e8;
+  --paper: #f8f5ea;
+  --paper-ink: #14211b;
+  --paper-rule: #cfc9b6;
+  --shadow: 0 1px 2px rgb(15 31 25 / 0.06), 0 12px 32px -12px rgb(15 31 25 / 0.18);
+  --ff-sans: "Geist Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --ff-mono: "Geist Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
+  --ff-display: "Instrument Serif", "Iowan Old Style", Georgia, serif;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0d1210;
-    --surface: #141b18;
-    --surface-2: #1b2420;
-    --border: #26322d;
-    --text: #e7eee9;
-    --muted: #93a39a;
-    --accent: #3ccf96;
+    --bg: #0a100e;
+    --surface: #111917;
+    --surface-2: #18231f;
+    --border: #24312c;
+    --text: #e9efe9;
+    --muted: #8fa097;
+    --accent: #5ee0a0;
     --accent-ink: #062016;
-    --accent-soft: #14302a;
-    --danger: #ff8a7a;
-    --danger-soft: #3a1915;
-    --warn-soft: #33290f;
+    --accent-soft: #12281f;
+    --danger: #ff8f80;
+    --danger-soft: #3a1a16;
+    --warn-soft: #2f2710;
+    --hero: #15342a;
+    --hero-ink: #eef4ee;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 16px 40px -12px rgb(0 0 0 / 0.6);
   }
 }
 
@@ -42,20 +58,141 @@
   --color-accent: var(--accent);
   --color-accent-ink: var(--accent-ink);
   --color-accent-soft: var(--accent-soft);
+  --color-lime: var(--lime);
+  --color-lime-ink: var(--lime-ink);
   --color-danger: var(--danger);
   --color-danger-soft: var(--danger-soft);
   --color-warn-soft: var(--warn-soft);
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --color-hero: var(--hero);
+  --color-hero-ink: var(--hero-ink);
+  --color-paper: var(--paper);
+  --color-paper-ink: var(--paper-ink);
+  --color-paper-rule: var(--paper-rule);
+  --font-sans: var(--ff-sans);
+  --font-mono: var(--ff-mono);
+  --font-display: var(--ff-display);
+  --shadow-lift: var(--shadow);
+  --animate-rise: rise 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  --animate-pop: pop 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+  --animate-toast: toast-in 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  --animate-live: live 1.8s ease-out infinite;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+}
+
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes live {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 8px transparent;
+  }
 }
 
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: var(--font-sans);
+  font-family: var(--ff-sans);
+}
+
+::selection {
+  background: var(--lime);
+  color: var(--lime-ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 .num {
-  font-family: var(--font-mono);
+  font-family: var(--ff-mono);
   font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.display {
+  font-family: var(--ff-display);
+  font-weight: 400;
+  letter-spacing: -0.015em;
+  line-height: 0.98;
+}
+
+.skeleton {
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--surface-2) 25%, var(--border) 37%, var(--surface-2) 63%) 0 0 / 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+
+/* Sections rise as they scroll into view. Browsers without scroll timelines show them at rest. */
+@supports (animation-timeline: view()) {
+  .reveal {
+    animation: rise linear both;
+    animation-timeline: view();
+    animation-range: entry 0% entry 40%;
+  }
+}
+
+/* Torn-off receipt edge along the bottom of the payslip. */
+.payslip-edge {
+  --tooth: 9px;
+  mask: conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) 50% / calc(2 * var(--tooth)) 100%;
+}
+
+.dot-grid {
+  background-image: radial-gradient(color-mix(in srgb, var(--text) 14%, transparent) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+/* Lottie layers carry these classes (see scripts/build-lottie.mjs) so they follow the theme. */
+.lt-fill-accent path {
+  fill: var(--accent);
+}
+.lt-fill-bg path {
+  fill: var(--surface);
+}
+.lt-stroke-accent path {
+  stroke: var(--accent);
+}
+.lt-stroke-ink path {
+  stroke: var(--text);
+}
+.lt-stroke-line path {
+  stroke: var(--border);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

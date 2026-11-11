@@ -82,6 +82,9 @@ export async function view<T>(
 export const getStreams = (accountId: string) =>
   view<StreamRecord[]>(config.payday, "streams_of", { account_id: accountId });
 
+export const getStream = (streamId: number) =>
+  view<StreamRecord | null>(config.payday, "get_stream", { stream_id: streamId });
+
 export async function getUsdcBalance(accountId: string): Promise<bigint> {
   return BigInt(await view<string>(config.usdc, "ft_balance_of", { account_id: accountId }));
 }
@@ -91,6 +94,14 @@ export type RelayResult = (TxOutcome & { error?: undefined }) | { ok: false; err
 /** True when the call ran and Payday or the token emitted `event`. */
 export function emitted(res: RelayResult, standard: string, event: string): boolean {
   return res.error === undefined && eventsNamed(res, standard, event).length > 0;
+}
+
+/** The amount Payday paid out in a withdrawal, or null if the call did not withdraw. */
+export function withdrawnAmount(res: RelayResult): bigint | null {
+  if (res.error !== undefined) return null;
+  const data = eventsNamed(res, "payday", "withdrawn")[0]?.data[0];
+  if (typeof data !== "object" || data === null || !("amount" in data) || typeof data.amount !== "string") return null;
+  return BigInt(data.amount);
 }
 
 /** The most useful explanation for a call that did not do what was asked. */

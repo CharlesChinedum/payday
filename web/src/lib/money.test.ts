@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { formatUsdc, parseUsdc, usdcDecimal, vestedAt, vestedSmooth } from "./money";
-import { fundingMsg, parsePayrollCsv, streamsCsv } from "./csv";
+import { formatUsdc, parseUsdc, splitUsdc, usdcDecimal, vestedAt, vestedSmooth } from "./money";
+import { csvToDraftRows, draftRowsToCsv, fundingMsg, parsePayrollCsv, streamsCsv } from "./csv";
 
 describe("USDC amounts", () => {
   it("parses decimals exactly", () => {
@@ -19,6 +19,11 @@ describe("USDC amounts", () => {
     expect(formatUsdc(0n)).toBe("0.00");
     expect(usdcDecimal(1_401_987n)).toBe("1.401987");
     expect(usdcDecimal(5n)).toBe("0.000005");
+  });
+
+  it("splits into money and a sub-cent tail", () => {
+    expect(splitUsdc(1_234_567_890n)).toEqual(["1,234.56", "7890"]);
+    expect(splitUsdc(5n)).toEqual(["0.00", "0005"]);
   });
 });
 
@@ -96,5 +101,25 @@ describe("accountant CSV", () => {
     expect(row).toBe(
       "1,acme.testnet,alice.testnet,USDC,1000.000000,1.401987,0.234628,998.363385,2026-11-11T06:30:20Z,2026-12-11T07:30:20Z,streaming",
     );
+  });
+});
+
+describe("payroll form rows", () => {
+  it("round-trips CSV through editable rows", () => {
+    const rows = csvToDraftRows("worker,amount,start,end\nalice.testnet, 1000 ,2026-11-01,\n\nbob.testnet,250.5\n");
+    expect(rows).toEqual([
+      { worker: "alice.testnet", amount: "1000", start: "2026-11-01", end: "" },
+      { worker: "bob.testnet", amount: "250.5", start: "", end: "" },
+    ]);
+    expect(draftRowsToCsv(rows)).toBe("alice.testnet,1000,2026-11-01,\nbob.testnet,250.5,,");
+  });
+
+  it("drops blank rows but keeps half-filled ones for validation", () => {
+    const csv = draftRowsToCsv([
+      { worker: "", amount: "", start: "2026-11-01", end: "" },
+      { worker: "alice.testnet", amount: "", start: "", end: "" },
+    ]);
+    expect(csv).toBe("alice.testnet,,,");
+    expect(() => parsePayrollCsv(csv, 0)).toThrow("Line 1");
   });
 });

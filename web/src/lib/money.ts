@@ -18,6 +18,15 @@ export function formatUsdc(units: bigint, decimals = 2): string {
   return `${whole.toLocaleString("en-US")}${trimmed ? `.${trimmed}` : ""}`;
 }
 
+/**
+ * Splits an amount for two-tone display: `["1,234.56", "7890"]`. The first part is what a
+ * person reads as money; the second is the sub-cent tail that makes streaming visible.
+ */
+export function splitUsdc(units: bigint): [main: string, tail: string] {
+  const frac = (units % SCALE).toString().padStart(USDC_DECIMALS, "0");
+  return [`${(units / SCALE).toLocaleString("en-US")}.${frac.slice(0, 2)}`, frac.slice(2)];
+}
+
 /** Plain decimal for CSV: no thousands separators, all 6 decimals. */
 export function usdcDecimal(units: bigint): string {
   return `${units / SCALE}.${(units % SCALE).toString().padStart(USDC_DECIMALS, "0")}`;

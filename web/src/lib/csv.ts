@@ -38,7 +38,7 @@ export function parsePayrollCsv(text: string, nowSecs: number): PayrollRow[] {
     const line = i + 1;
     const cells = raw.split(",").map((c) => c.trim());
     if (cells.every((c) => c === "")) return;
-    if (i === 0 && cells[0].toLowerCase() === "worker") return;
+    if (i === 0 && isHeader(cells)) return;
 
     const [worker, amount, startCell = "", endCell = ""] = cells;
     if (!worker || !ACCOUNT_ID.test(worker) || worker.length < 2 || worker.length > 64) {
@@ -61,6 +61,35 @@ export function parsePayrollCsv(text: string, nowSecs: number): PayrollRow[] {
   if (rows.length === 0) throw new Error("Add at least one worker");
   if (rows.length > 25) throw new Error("At most 25 workers per funding transfer");
   return rows;
+}
+
+/** One editable line of the payroll form; every field is the text the user typed. */
+export interface DraftRow {
+  worker: string;
+  amount: string;
+  start: string;
+  end: string;
+}
+
+export const EMPTY_DRAFT_ROW: DraftRow = { worker: "", amount: "", start: "", end: "" };
+
+const isHeader = (cells: string[]) => cells[0]?.toLowerCase() === "worker";
+
+/** Splits CSV text into editable rows without validating them; `parsePayrollCsv` does that. */
+export function csvToDraftRows(text: string): DraftRow[] {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.split(",").map((c) => c.trim()))
+    .filter((cells, i) => cells.some((c) => c !== "") && !(i === 0 && isHeader(cells)))
+    .map(([worker = "", amount = "", start = "", end = ""]) => ({ worker, amount, start, end }));
+}
+
+/** Blank rows are dropped, so a half-filled form validates only what was entered. */
+export function draftRowsToCsv(rows: DraftRow[]): string {
+  return rows
+    .filter((r) => r.worker.trim() !== "" || r.amount.trim() !== "")
+    .map((r) => [r.worker, r.amount, r.start, r.end].map((c) => c.trim()).join(","))
+    .join("\n");
 }
 
 export function fundingMsg(rows: PayrollRow[]): string {

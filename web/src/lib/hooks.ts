@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { KeyPair } from "near-api-js";
 import type { StreamRecord } from "./csv";
 import { getStreams, getUsdcBalance, implicitId, loadKeyPair, onboard, type Role } from "./near";
@@ -90,10 +90,23 @@ export function useLedger(accountId: string | null): Ledger {
   return { ...data, refresh };
 }
 
+export interface LogEntry {
+  id: number;
+  at: number;
+  text: string;
+  txHash?: string;
+  error?: boolean;
+}
+
+const LOG_LIMIT = 20;
+
+/** Newest-first record of what the user did this session; feeds the toasts and the activity card. */
 export function useLog() {
-  const [entries, setEntries] = useState<Array<{ at: number; text: string; txHash?: string; error?: boolean }>>([]);
+  const [entries, setEntries] = useState<LogEntry[]>([]);
+  const nextId = useRef(1);
   const add = useCallback((text: string, txHash?: string, error?: boolean) => {
-    setEntries((prev) => [{ at: Date.now() + Math.random(), text, txHash, error }, ...prev].slice(0, 20));
+    const entry: LogEntry = { id: nextId.current++, at: Date.now(), text, txHash, error };
+    setEntries((prev) => [entry, ...prev].slice(0, LOG_LIMIT));
   }, []);
   return { entries, add };
 }
