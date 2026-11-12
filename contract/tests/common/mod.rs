@@ -11,6 +11,7 @@ use serde_json::{json, Value};
 pub const USDC: u128 = 1_000_000;
 pub const STREAM_FEE: u128 = 10_000;
 pub const REGISTRATION_FEE: u128 = 10_000;
+pub const PAYOUT_FEE: u128 = 10_000;
 pub const REGISTRATION_YOCTO: u128 = 1_250_000_000_000_000_000_000;
 pub const MAX_GAS: Gas = Gas::from_tgas(300);
 pub const PAYOUT_GAS: Gas = Gas::from_tgas(100);

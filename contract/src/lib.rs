@@ -40,11 +40,14 @@ pub const VERSION: &str = "2.0.0";
 pub const MIN_STREAM_AMOUNT: u128 = 1_000_000;
 /// Maximum streams created by one funding transfer.
 pub const MAX_BATCH: usize = 25;
-/// Highest fee the owner can set, per stream or per registration: 1 USDC.
+/// Fees the owner can set, each between 0.001 and 1 USDC. A floor above zero keeps every
+/// sponsored action and every registration paid for.
+pub const MIN_FEE: u128 = 1_000;
 pub const MAX_FEE: u128 = 1_000_000;
-/// Default fees: 0.01 USDC.
+/// Default fees: 0.01 USDC each.
 pub const DEFAULT_STREAM_FEE: u128 = 10_000;
 pub const DEFAULT_REGISTRATION_FEE: u128 = 10_000;
+pub const DEFAULT_PAYOUT_FEE: u128 = 10_000;
 /// A stream may start at most this far in the past or the future, and last at most
 /// `MAX_DURATION_SECS`. Catches milliseconds passed as seconds.
 pub const MAX_START_OFFSET_SECS: u64 = 366 * 86_400;
@@ -173,6 +176,7 @@ pub struct ConfigView {
     pub paused: bool,
     pub stream_fee: U128,
     pub registration_fee: U128,
+    pub payout_fee: U128,
     pub fees_collected: U128,
 }
 
@@ -185,6 +189,9 @@ pub struct Payday {
     paused: bool,
     stream_fee: u128,
     registration_fee: u128,
+    /// Charged on every withdrawal, claim and send: it pays for the gas the relayer
+    /// spends on the user's behalf, so no sponsored payout is free to repeat.
+    payout_fee: u128,
     fees_collected: u128,
     next_id: u64,
     streams: LookupMap<u64, Stream>,
@@ -215,6 +222,7 @@ impl Payday {
             paused: false,
             stream_fee: DEFAULT_STREAM_FEE,
             registration_fee: DEFAULT_REGISTRATION_FEE,
+            payout_fee: DEFAULT_PAYOUT_FEE,
             fees_collected: 0,
             next_id: 1,
             streams: LookupMap::new(StorageKey::Streams),
@@ -241,6 +249,7 @@ impl Payday {
             paused: false,
             stream_fee: DEFAULT_STREAM_FEE,
             registration_fee: DEFAULT_REGISTRATION_FEE,
+            payout_fee: DEFAULT_PAYOUT_FEE,
             fees_collected: 0,
             next_id: old.next_id,
             streams: old.streams,
@@ -274,9 +283,10 @@ impl Payday {
         PromiseOrValue::Value(U128(0))
     }
 
-    /// Withdraws vested USDC. `amount` defaults to everything withdrawable. `receiver`
-    /// defaults to the worker; another receiver needs at least 1 USDC. If the receiver is
-    /// not registered with the token, the registration fee is deducted. Attach 100 Tgas.
+    /// Withdraws vested USDC. `amount` defaults to everything withdrawable and must be at
+    /// least 1 USDC unless it empties the stream. `receiver` defaults to the worker. The
+    /// payout fee is deducted, plus the registration fee if the receiver is not
+    /// registered with the token. Attach 100 Tgas.
     pub fn withdraw(
         &mut self,
         stream_id: u64,
@@ -299,14 +309,24 @@ impl Payday {
             amount <= withdrawable,
             "Amount exceeds withdrawable balance"
         );
-        if receiver != worker {
-            require!(
-                amount >= MIN_STREAM_AMOUNT,
-                "Payouts to another account must be at least 1 USDC"
-            );
-        }
+        let empties_stream = amount == stream.deposit - stream.withdrawn;
+        require!(
+            amount >= MIN_STREAM_AMOUNT || empties_stream,
+            "Withdraw at least 1 USDC, or everything left in the stream"
+        );
+        require!(
+            amount > self.payout_fee,
+            "Amount does not cover the payout fee"
+        );
         stream.withdrawn += amount;
-        self.payout(worker, receiver, amount, Source::Stream { id: stream_id })
+        let fee = self.payout_fee;
+        self.payout(
+            worker,
+            receiver,
+            amount,
+            fee,
+            Source::Stream { id: stream_id },
+        )
     }
 
     /// Cancels a stream that has not finished. The employer is refunded the unvested
@@ -359,16 +379,18 @@ impl Payday {
         if refund == 0 {
             return PromiseOrValue::Value(true);
         }
+        // The refund is the stream's own money returning: no payout fee.
         PromiseOrValue::Promise(self.payout(
             stream.employer.clone(),
             stream.employer,
             refund,
+            0,
             Source::Owed,
         ))
     }
 
     /// Pays out the caller's `owed` balance, to themselves or (for 1 USDC or more) to
-    /// another account. Attach 100 Tgas.
+    /// another account, less the payout fee. Attach 100 Tgas.
     pub fn claim_owed(&mut self, receiver: Option<AccountId>) -> Promise {
         let account = env::predecessor_account_id();
         let receiver = receiver.unwrap_or_else(|| account.clone());
@@ -381,7 +403,12 @@ impl Payday {
                 "Payouts to another account must be at least 1 USDC"
             );
         }
-        self.payout(account, receiver, amount, Source::Owed)
+        require!(
+            amount > self.payout_fee,
+            "Owed balance does not cover the payout fee"
+        );
+        let fee = self.payout_fee;
+        self.payout(account, receiver, amount, fee, Source::Owed)
     }
 
     /// Deletes streams that have ended and been fully paid out. Anyone may call it.
@@ -405,17 +432,20 @@ impl Payday {
 
     // ---------- owner ----------
 
-    pub fn set_fees(&mut self, stream_fee: U128, registration_fee: U128) {
+    pub fn set_fees(&mut self, stream_fee: U128, registration_fee: U128, payout_fee: U128) {
         self.assert_owner();
-        require!(
-            stream_fee.0 <= MAX_FEE && registration_fee.0 <= MAX_FEE,
-            "Fee above the 1 USDC cap"
-        );
+        for fee in [stream_fee.0, registration_fee.0, payout_fee.0] {
+            require!(
+                (MIN_FEE..=MAX_FEE).contains(&fee),
+                "Each fee must be between 0.001 and 1 USDC"
+            );
+        }
         self.stream_fee = stream_fee.0;
         self.registration_fee = registration_fee.0;
+        self.payout_fee = payout_fee.0;
         emit(
             "fees_set",
-            json!({ "stream_fee": stream_fee, "registration_fee": registration_fee }),
+            json!({ "stream_fee": stream_fee, "registration_fee": registration_fee, "payout_fee": payout_fee }),
         );
     }
 
@@ -434,7 +464,7 @@ impl Payday {
             "Amount exceeds collected fees"
         );
         self.fees_collected -= amount.0;
-        self.payout(self.owner.clone(), receiver, amount.0, Source::Fees)
+        self.payout(self.owner.clone(), receiver, amount.0, 0, Source::Fees)
     }
 
     /// First step of an ownership transfer; the new owner must call `accept_owner`.
@@ -472,43 +502,41 @@ impl Payday {
 
     // ---------- callbacks ----------
 
-    /// Second step of a payout: routes on whether the receiver is registered.
+    /// Second step of a payout: routes on whether the receiver is registered, adding the
+    /// registration fee to `base_fee` only if Payday must register it. Fees are booked
+    /// only once the transfer succeeds (`on_paid`), so nothing in flight can be withdrawn.
     #[private]
     pub fn on_receiver_checked(
         &mut self,
         account: AccountId,
         receiver: AccountId,
         amount: U128,
+        base_fee: U128,
         source: Source,
     ) -> PromiseOrValue<bool> {
         let gross = amount.0;
-        let registered = match receiver_registration() {
-            Some(registered) => registered,
-            None => {
-                return PromiseOrValue::Value(self.fail_payout(
-                    &account,
-                    &receiver,
-                    gross,
-                    0,
-                    source,
-                    "registration check failed",
-                ))
-            }
+        let Some(registered) = receiver_registration() else {
+            return PromiseOrValue::Value(self.fail_payout(
+                &account,
+                &receiver,
+                gross,
+                source,
+                "registration check failed",
+            ));
         };
         if registered {
             return PromiseOrValue::Promise(
-                self.transfer_then_settle(None, account, receiver, gross, 0, source),
+                self.transfer_then_settle(None, account, receiver, gross, base_fee.0, source),
             );
         }
-        let fee = self.registration_fee;
+        let fee = base_fee.0 + self.registration_fee;
         if gross <= fee {
             return PromiseOrValue::Value(self.fail_payout(
                 &account,
                 &receiver,
                 gross,
-                0,
                 source,
-                "amount does not cover the registration fee",
+                "amount does not cover the fees",
             ));
         }
         if !self.can_afford_registration() {
@@ -516,12 +544,10 @@ impl Payday {
                 &account,
                 &receiver,
                 gross,
-                0,
                 source,
                 "registration unavailable, try again later",
             ));
         }
-        self.fees_collected += fee;
         let register = ext_ft::ext(self.token.clone())
             .with_attached_deposit(REGISTRATION_DEPOSIT)
             .with_static_gas(GAS_STORAGE_DEPOSIT)
@@ -536,8 +562,8 @@ impl Payday {
         ))
     }
 
-    /// Last step of a payout: on success records it (and deletes a settled stream); on
-    /// failure puts the money back where it came from and refunds the fee.
+    /// Last step of a payout: on success books the fee and records the payout (deleting a
+    /// settled stream); on failure puts the whole amount back where it came from.
     #[private]
     pub fn on_paid(
         &mut self,
@@ -553,11 +579,11 @@ impl Payday {
                 &account,
                 &receiver,
                 amount.0,
-                fee.0,
                 source,
                 "token transfer failed",
             );
         }
+        self.fees_collected += fee.0;
         emit(
             "paid",
             json!({
@@ -574,6 +600,55 @@ impl Payday {
         true
     }
 
+    // ---------- 1.0 callbacks ----------
+    // Transfers started by 1.0 that are still in flight when the contract is upgraded call
+    // back into these. They settle exactly as 1.0 would have, so no payout is lost.
+
+    #[private]
+    pub fn on_withdraw(
+        &mut self,
+        stream_id: u64,
+        worker: AccountId,
+        receiver: AccountId,
+        amount: U128,
+        #[callback_result] result: Result<(), PromiseError>,
+    ) -> bool {
+        if result.is_ok() {
+            emit(
+                "withdrawn",
+                json!({ "id": stream_id, "worker": worker, "receiver": receiver, "amount": amount }),
+            );
+            return true;
+        }
+        match self.streams.get_mut(&stream_id) {
+            Some(stream) => stream.withdrawn -= amount.0,
+            None => self.credit_owed(&worker, amount.0),
+        }
+        emit(
+            "withdraw_failed",
+            json!({ "id": stream_id, "worker": worker, "receiver": receiver, "amount": amount }),
+        );
+        false
+    }
+
+    #[private]
+    pub fn on_transfer_or_owe(
+        &mut self,
+        account: AccountId,
+        amount: U128,
+        #[callback_result] result: Result<(), PromiseError>,
+    ) -> bool {
+        if result.is_ok() {
+            return true;
+        }
+        self.credit_owed(&account, amount.0);
+        emit(
+            "transfer_failed",
+            json!({ "account": account, "amount": amount }),
+        );
+        false
+    }
+
     // ---------- views ----------
 
     pub fn config(&self) -> ConfigView {
@@ -585,6 +660,7 @@ impl Payday {
             paused: self.paused,
             stream_fee: U128(self.stream_fee),
             registration_fee: U128(self.registration_fee),
+            payout_fee: U128(self.payout_fee),
             fees_collected: U128(self.fees_collected),
         }
     }
@@ -687,17 +763,22 @@ impl Payday {
 
     fn send(&mut self, sender: AccountId, amount: u128, receiver: AccountId) {
         self.assert_valid_receiver(&receiver);
+        require!(receiver != sender, "Cannot send to yourself");
         require!(amount >= MIN_STREAM_AMOUNT, "Sends must be at least 1 USDC");
         // Detached: the transfer has settled; a failed payout lands in the sender's owed.
-        self.payout(sender, receiver, amount, Source::Owed).detach();
+        let fee = self.payout_fee;
+        self.payout(sender, receiver, amount, fee, Source::Owed)
+            .detach();
     }
 
-    /// Pays `amount` from `source` to `receiver`, crediting `account` if it fails.
+    /// Pays `amount` from `source` to `receiver`, less `base_fee` (and the registration
+    /// fee if needed), crediting `account` if it fails.
     fn payout(
         &self,
         account: AccountId,
         receiver: AccountId,
         amount: u128,
+        base_fee: u128,
         source: Source,
     ) -> Promise {
         ext_ft::ext(self.token.clone())
@@ -706,7 +787,7 @@ impl Payday {
             .then(
                 Self::ext(env::current_account_id())
                     .with_static_gas(GAS_ROUTE)
-                    .on_receiver_checked(account, receiver, U128(amount), source),
+                    .on_receiver_checked(account, receiver, U128(amount), U128(base_fee), source),
             )
     }
 
@@ -739,17 +820,16 @@ impl Payday {
         }
     }
 
-    /// Reverses a payout's bookkeeping and reports where the money went back to.
+    /// Puts a failed payout's whole amount back where it came from. No fee was booked yet,
+    /// so there is nothing to take back from `fees_collected`.
     fn fail_payout(
         &mut self,
         account: &AccountId,
         receiver: &AccountId,
         gross: u128,
-        fee: u128,
         source: Source,
         reason: &str,
     ) -> bool {
-        self.fees_collected -= fee;
         let credited_to = match source {
             Source::Stream { id } => match self.streams.get_mut(&id) {
                 Some(stream) => {

@@ -37,35 +37,39 @@ async fn full_payroll_flow() -> anyhow::Result<()> {
         "funding registers nobody"
     );
 
+    // About 9.9 USDC has vested in 100 seconds.
     let out = env
-        .withdraw(&alice, json!({ "stream_id": 1 }), PAYOUT_GAS)
-        .await?
-        .into_result()?;
-    let paid = &events(&out, "paid")[0];
-    let gross = amount(&env.stream(1).await?, "withdrawn");
-    assert!(gross > 0, "100+ seconds have vested");
-    assert_eq!(
-        amount(paid, "fee"),
-        REGISTRATION_FEE,
-        "first payout registers Alice"
-    );
-    assert_eq!(env.usdc_of(alice.id()).await?, gross - REGISTRATION_FEE);
-    assert!(env.is_registered(alice.id()).await?);
-
-    // Once registered, payouts carry no fee. A few seconds of salary have vested since.
-    const SMALL: u128 = 20_000;
-    let again = env
         .withdraw(
             &alice,
-            json!({ "stream_id": 1, "amount": SMALL.to_string() }),
+            json!({ "stream_id": 1, "amount": (5 * USDC).to_string() }),
             PAYOUT_GAS,
         )
         .await?
         .into_result()?;
-    assert_eq!(amount(&events(&again, "paid")[0], "fee"), 0);
+    let paid = &events(&out, "paid")[0];
     assert_eq!(
-        env.usdc_of(alice.id()).await?,
-        gross - REGISTRATION_FEE + SMALL
+        amount(paid, "fee"),
+        PAYOUT_FEE + REGISTRATION_FEE,
+        "first payout registers Alice"
+    );
+    let first = 5 * USDC - PAYOUT_FEE - REGISTRATION_FEE;
+    assert_eq!(env.usdc_of(alice.id()).await?, first);
+    assert!(env.is_registered(alice.id()).await?);
+
+    // Once registered, payouts carry only the payout fee.
+    let again = env
+        .withdraw(
+            &alice,
+            json!({ "stream_id": 1, "amount": USDC.to_string() }),
+            PAYOUT_GAS,
+        )
+        .await?
+        .into_result()?;
+    assert_eq!(amount(&events(&again, "paid")[0], "fee"), PAYOUT_FEE);
+    assert_eq!(env.usdc_of(alice.id()).await?, first + USDC - PAYOUT_FEE);
+    assert_eq!(
+        env.fees_collected().await?,
+        2 * STREAM_FEE + 2 * PAYOUT_FEE + REGISTRATION_FEE
     );
     Ok(())
 }
@@ -149,14 +153,18 @@ async fn cash_out_to_a_fresh_account_pays_the_registration_fee() -> anyhow::Resu
     .into_result()?;
     assert_eq!(
         env.usdc_of(&deposit_address).await?,
-        10 * USDC - REGISTRATION_FEE
+        10 * USDC - PAYOUT_FEE - REGISTRATION_FEE
     );
     assert_eq!(amount(&env.stream(1).await?, "withdrawn"), 10 * USDC);
-    assert_eq!(env.fees_collected().await?, STREAM_FEE + REGISTRATION_FEE);
+    assert_eq!(
+        env.fees_collected().await?,
+        STREAM_FEE + PAYOUT_FEE + REGISTRATION_FEE
+    );
     Ok(())
 }
 
-/// A payout that cannot cover the registration fee fails and is put back in the stream.
+/// A payout that cannot cover its fees fails and is put back in the stream, and no fee
+/// is kept.
 #[tokio::test]
 async fn failed_payout_is_restored_to_the_stream() -> anyhow::Result<()> {
     let env = setup().await?;
@@ -169,11 +177,22 @@ async fn failed_payout_is_restored_to_the_stream() -> anyhow::Result<()> {
     )
     .await?
     .into_result()?;
+    // At the highest registration fee, 1 USDC to a fresh account cannot cover both fees.
+    env.owner
+        .call(env.payday.id(), "set_fees")
+        .args_json(json!({
+            "stream_fee": STREAM_FEE.to_string(),
+            "registration_fee": USDC.to_string(),
+            "payout_fee": PAYOUT_FEE.to_string(),
+        }))
+        .transact()
+        .await?
+        .into_result()?;
 
     let out = env
         .withdraw(
             &alice,
-            json!({ "stream_id": 1, "amount": REGISTRATION_FEE.to_string() }),
+            json!({ "stream_id": 1, "amount": USDC.to_string(), "receiver": ghost("fresh", 0) }),
             PAYOUT_GAS,
         )
         .await?
@@ -182,6 +201,7 @@ async fn failed_payout_is_restored_to_the_stream() -> anyhow::Result<()> {
     assert_eq!(failed["credited_to"], "stream");
     assert_eq!(amount(&env.stream(1).await?, "withdrawn"), 0);
     assert_eq!(env.usdc_of(env.payday.id()).await?, 10 * USDC + STREAM_FEE);
+    assert_eq!(env.fees_collected().await?, STREAM_FEE);
     assert_eq!(env.usdc_of(alice.id()).await?, 0);
     Ok(())
 }
@@ -213,14 +233,15 @@ async fn cancel_splits_funds_exactly() -> anyhow::Result<()> {
         .into_result()?;
     let earned = env.usdc_of(alice.id()).await?;
 
+    // The employer's refund carries no payout fee; Alice's payout does.
     assert_eq!(
-        refund + earned + REGISTRATION_FEE,
+        refund + earned + PAYOUT_FEE + REGISTRATION_FEE,
         deposit,
         "every unit is accounted for"
     );
     assert_eq!(
         env.usdc_of(env.payday.id()).await?,
-        STREAM_FEE + REGISTRATION_FEE,
+        STREAM_FEE + PAYOUT_FEE + REGISTRATION_FEE,
         "only fees remain"
     );
     assert!(
@@ -231,8 +252,8 @@ async fn cancel_splits_funds_exactly() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The exit path: USDC held by an account is sent on through Payday, which registers the
-/// receiver for the fee.
+/// The exit path: USDC held by an account is sent on through Payday, less the payout fee,
+/// registering the receiver for the registration fee.
 #[tokio::test]
 async fn send_moves_usdc_out_of_an_account() -> anyhow::Result<()> {
     let env = setup().await?;
@@ -248,8 +269,14 @@ async fn send_moves_usdc_out_of_an_account() -> anyhow::Result<()> {
         )
         .await?
         .into_result()?;
-    assert_eq!(amount(&events(&out, "paid")[0], "fee"), REGISTRATION_FEE);
-    assert_eq!(env.usdc_of(&receiver).await?, 20 * USDC - REGISTRATION_FEE);
+    assert_eq!(
+        amount(&events(&out, "paid")[0], "fee"),
+        PAYOUT_FEE + REGISTRATION_FEE
+    );
+    assert_eq!(
+        env.usdc_of(&receiver).await?,
+        20 * USDC - PAYOUT_FEE - REGISTRATION_FEE
+    );
     assert_eq!(env.usdc_of(holder.id()).await?, 30 * USDC);
     assert_eq!(env.owed_of(holder.id()).await?, 0);
     Ok(())

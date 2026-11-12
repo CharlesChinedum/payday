@@ -16,6 +16,7 @@ const STOP: u64 = START + 1_000;
 const DEPOSIT: u128 = 1_000 * MIN_STREAM_AMOUNT; // 1,000 USDC over 1,000 s
 const FEE: u128 = DEFAULT_STREAM_FEE;
 const REG_FEE: u128 = DEFAULT_REGISTRATION_FEE;
+const PAY_FEE: u128 = DEFAULT_PAYOUT_FEE;
 const RICH: u128 = 10u128.pow(26);
 /// Storage the mock VM reports by default.
 const MOCK_STORAGE_BYTES: u128 = 1024 * 300;
@@ -102,6 +103,23 @@ fn events(name: &str) -> Vec<near_sdk::serde_json::Value> {
 
 fn from_stream(id: u64) -> Source {
     Source::Stream { id }
+}
+
+/// JSON arguments of the last call to `method` that this call scheduled.
+fn scheduled(method: &str) -> near_sdk::serde_json::Value {
+    get_created_receipts()
+        .iter()
+        .flat_map(|r| r.actions.iter())
+        .filter_map(|a| match a {
+            near_sdk::mock::MockAction::FunctionCallWeight {
+                method_name, args, ..
+            } if method_name == method.as_bytes() => {
+                Some(near_sdk::serde_json::from_slice(args).unwrap())
+            }
+            _ => None,
+        })
+        .next_back()
+        .unwrap_or_else(|| panic!("no {method} scheduled"))
 }
 
 // ---------- funding ----------
@@ -327,11 +345,29 @@ fn cannot_withdraw_before_start() {
 }
 
 #[test]
-#[should_panic(expected = "Payouts to another account must be at least 1 USDC")]
-fn external_payout_has_a_minimum() {
+#[should_panic(expected = "Withdraw at least 1 USDC, or everything left in the stream")]
+fn withdrawals_have_a_minimum() {
     let mut c = setup();
     set_ctx(ALICE, START + 500);
-    c.withdraw(1, Some(U128(MIN_STREAM_AMOUNT - 1)), Some(acc(BOB)));
+    c.withdraw(1, Some(U128(MIN_STREAM_AMOUNT - 1)), None);
+}
+
+#[test]
+fn a_small_remainder_can_be_withdrawn_in_full() {
+    let mut c = setup();
+    set_ctx(ALICE, STOP);
+    c.withdraw(1, Some(U128(DEPOSIT - 500_000)), None);
+    c.withdraw(1, None, None);
+    assert_eq!(stream(&c, 1).withdrawn.0, DEPOSIT);
+}
+
+#[test]
+#[should_panic(expected = "Amount does not cover the payout fee")]
+fn a_withdrawal_must_cover_the_payout_fee() {
+    let mut c = setup();
+    set_ctx(ALICE, STOP);
+    c.withdraw(1, Some(U128(DEPOSIT - PAY_FEE)), None);
+    c.withdraw(1, None, None);
 }
 
 #[test]
@@ -345,14 +381,22 @@ fn cannot_pay_out_to_the_contract() {
 // ---------- payout routing ----------
 
 #[test]
-fn registered_receiver_is_paid_without_a_fee() {
+fn registered_receiver_pays_only_the_payout_fee() {
     let mut c = setup();
     set_ctx(ALICE, START + 500);
     c.withdraw(1, None, None);
     set_callback(START + 500, RICH, registered());
-    let routed = c.on_receiver_checked(acc(ALICE), acc(ALICE), U128(DEPOSIT / 2), from_stream(1));
+    let routed = c.on_receiver_checked(
+        acc(ALICE),
+        acc(ALICE),
+        U128(DEPOSIT / 2),
+        U128(PAY_FEE),
+        from_stream(1),
+    );
     assert!(matches!(routed, PromiseOrValue::Promise(_)));
-    assert_eq!(c.config().fees_collected.0, FEE, "only the stream fee");
+    drop(routed); // a promise is scheduled when dropped
+    assert_eq!(scheduled("on_paid")["fee"], PAY_FEE.to_string());
+    assert_eq!(c.config().fees_collected.0, FEE, "booked only once paid");
 }
 
 #[test]
@@ -361,20 +405,41 @@ fn unregistered_receiver_pays_the_registration_fee() {
     set_ctx(ALICE, START + 500);
     c.withdraw(1, None, None);
     set_callback(START + 500, RICH, unregistered());
-    let routed = c.on_receiver_checked(acc(ALICE), acc(ALICE), U128(DEPOSIT / 2), from_stream(1));
+    let routed = c.on_receiver_checked(
+        acc(ALICE),
+        acc(ALICE),
+        U128(DEPOSIT / 2),
+        U128(PAY_FEE),
+        from_stream(1),
+    );
     assert!(matches!(routed, PromiseOrValue::Promise(_)));
-    assert_eq!(c.config().fees_collected.0, FEE + REG_FEE);
+    drop(routed); // a promise is scheduled when dropped
+    assert_eq!(scheduled("on_paid")["fee"], (PAY_FEE + REG_FEE).to_string());
+    assert_eq!(scheduled("storage_deposit")["account_id"], ALICE);
+    assert_eq!(c.config().fees_collected.0, FEE, "booked only once paid");
 }
 
 #[test]
-fn registration_fee_must_fit_in_the_payout() {
+fn fees_must_fit_in_the_payout() {
+    // The last 0.015 USDC of a stream: emptying it is allowed, but it cannot cover both fees.
     let mut c = setup();
-    set_ctx(ALICE, START + 1);
-    c.withdraw(1, Some(U128(REG_FEE)), None);
-    set_callback(START + 1, RICH, unregistered());
-    let routed = c.on_receiver_checked(acc(ALICE), acc(ALICE), U128(REG_FEE), from_stream(1));
+    set_ctx(ALICE, STOP);
+    c.withdraw(1, Some(U128(DEPOSIT - 15_000)), None);
+    c.withdraw(1, None, None);
+    set_callback(STOP, RICH, unregistered());
+    let routed = c.on_receiver_checked(
+        acc(ALICE),
+        acc(ALICE),
+        U128(15_000),
+        U128(PAY_FEE),
+        from_stream(1),
+    );
     assert!(matches!(routed, PromiseOrValue::Value(false)));
-    assert_eq!(stream(&c, 1).withdrawn.0, 0, "restored to the stream");
+    assert_eq!(
+        stream(&c, 1).withdrawn.0,
+        DEPOSIT - 15_000,
+        "restored to the stream"
+    );
     assert_eq!(events("payout_failed")[0]["credited_to"], "stream");
 }
 
@@ -384,10 +449,16 @@ fn no_registration_below_the_near_reserve() {
     set_ctx(ALICE, START + 500);
     c.withdraw(1, None, None);
     set_callback(START + 500, just_above_storage(), unregistered());
-    let routed = c.on_receiver_checked(acc(ALICE), acc(ALICE), U128(DEPOSIT / 2), from_stream(1));
+    let routed = c.on_receiver_checked(
+        acc(ALICE),
+        acc(ALICE),
+        U128(DEPOSIT / 2),
+        U128(PAY_FEE),
+        from_stream(1),
+    );
     assert!(matches!(routed, PromiseOrValue::Value(false)));
     assert_eq!(stream(&c, 1).withdrawn.0, 0);
-    assert_eq!(c.config().fees_collected.0, FEE, "no registration fee kept");
+    assert_eq!(c.config().fees_collected.0, FEE, "no fee kept");
 }
 
 #[test]
@@ -396,7 +467,13 @@ fn failed_registration_check_restores_the_stream() {
     set_ctx(ALICE, START + 500);
     c.withdraw(1, None, None);
     set_callback(START + 500, RICH, PromiseResult::Failed);
-    let routed = c.on_receiver_checked(acc(ALICE), acc(ALICE), U128(DEPOSIT / 2), from_stream(1));
+    let routed = c.on_receiver_checked(
+        acc(ALICE),
+        acc(ALICE),
+        U128(DEPOSIT / 2),
+        U128(PAY_FEE),
+        from_stream(1),
+    );
     assert!(matches!(routed, PromiseOrValue::Value(false)));
     assert_eq!(stream(&c, 1).withdrawable.0, DEPOSIT / 2);
 }
@@ -411,7 +488,13 @@ fn unexpected_registration_reply_counts_as_registered() {
         RICH,
         PromiseResult::Successful(b"\"surprise\"".to_vec()),
     );
-    let routed = c.on_receiver_checked(acc(ALICE), acc(ALICE), U128(DEPOSIT / 2), from_stream(1));
+    let routed = c.on_receiver_checked(
+        acc(ALICE),
+        acc(ALICE),
+        U128(DEPOSIT / 2),
+        U128(PAY_FEE),
+        from_stream(1),
+    );
     assert!(
         matches!(routed, PromiseOrValue::Promise(_)),
         "never panics, so a payout is never stranded"
@@ -430,31 +513,44 @@ fn successful_payout_reports_the_net_amount() {
         acc(ALICE),
         acc(ALICE),
         U128(DEPOSIT / 2),
-        U128(REG_FEE),
+        U128(PAY_FEE + REG_FEE),
         from_stream(1),
         Ok(())
     ));
     let paid = &events("paid")[0];
-    assert_eq!(paid["amount"], (DEPOSIT / 2 - REG_FEE).to_string());
-    assert_eq!(paid["fee"], REG_FEE.to_string());
+    assert_eq!(
+        paid["amount"],
+        (DEPOSIT / 2 - PAY_FEE - REG_FEE).to_string()
+    );
+    assert_eq!(paid["fee"], (PAY_FEE + REG_FEE).to_string());
     assert_eq!(paid["source"]["kind"], "stream");
+    assert_eq!(
+        c.config().fees_collected.0,
+        FEE + PAY_FEE + REG_FEE,
+        "booked on success"
+    );
 }
 
 #[test]
-fn failed_transfer_restores_the_stream_and_refunds_the_fee() {
+fn failed_transfer_restores_the_stream_and_keeps_no_fee() {
     let mut c = setup();
     set_ctx(ALICE, START + 500);
     c.withdraw(1, None, None);
     set_callback(START + 500, RICH, unregistered());
-    c.on_receiver_checked(acc(ALICE), acc(ALICE), U128(DEPOSIT / 2), from_stream(1));
-    assert_eq!(c.config().fees_collected.0, FEE + REG_FEE);
+    c.on_receiver_checked(
+        acc(ALICE),
+        acc(ALICE),
+        U128(DEPOSIT / 2),
+        U128(PAY_FEE),
+        from_stream(1),
+    );
 
     set_callback(START + 500, RICH, PromiseResult::Failed);
     assert!(!c.on_paid(
         acc(ALICE),
         acc(ALICE),
         U128(DEPOSIT / 2),
-        U128(REG_FEE),
+        U128(PAY_FEE + REG_FEE),
         from_stream(1),
         Err(PromiseError::Failed)
     ));
@@ -531,16 +627,16 @@ fn cancel_before_anything_vests_deletes_the_stream() {
 #[test]
 fn cancel_moves_dust_to_owed_and_deletes_the_stream() {
     let mut c = setup();
-    // One second in, exactly 1 USDC has vested; Alice takes 1 unit of it.
-    set_ctx(ALICE, START + 1);
-    c.withdraw(1, Some(U128(1)), None);
-    set_ctx(EMPLOYER, START + 1);
+    // Two seconds in, 2 USDC have vested; Alice takes 1.5 of them.
+    set_ctx(ALICE, START + 2);
+    c.withdraw(1, Some(U128(1_500_000)), None);
+    set_ctx(EMPLOYER, START + 2);
     c.cancel(1);
     assert!(
         c.get_stream(1).is_none(),
         "a sub-1 USDC remainder does not keep the stream alive"
     );
-    assert_eq!(c.owed_of(acc(ALICE)).0, MIN_STREAM_AMOUNT - 1);
+    assert_eq!(c.owed_of(acc(ALICE)).0, 500_000);
     assert_eq!(events("stream_canceled")[0]["worker_remaining_to"], "owed");
 }
 
@@ -580,6 +676,27 @@ fn claim_owed_can_pay_another_account() {
     c.claim_owed(Some(acc(BOB)));
     assert_eq!(c.owed_of(acc(ALICE)).0, 0);
     assert_eq!(get_created_receipts().len(), 2);
+    assert_eq!(
+        scheduled("on_receiver_checked")["base_fee"],
+        PAY_FEE.to_string()
+    );
+}
+
+#[test]
+#[should_panic(expected = "Owed balance does not cover the payout fee")]
+fn a_claim_must_cover_the_payout_fee() {
+    let mut c = setup();
+    set_callback(START, RICH, PromiseResult::Failed);
+    c.on_paid(
+        acc(ALICE),
+        acc(ALICE),
+        U128(PAY_FEE),
+        U128(0),
+        Source::Owed,
+        Err(PromiseError::Failed),
+    );
+    set_ctx(ALICE, START);
+    c.claim_owed(None);
 }
 
 #[test]
@@ -623,6 +740,22 @@ fn send_passes_usdc_on_and_settles_the_transfer() {
         "never hands the token a promise to read as the unused amount"
     );
     assert_eq!(get_created_receipts().len(), 2);
+    assert_eq!(
+        scheduled("on_receiver_checked")["base_fee"],
+        PAY_FEE.to_string()
+    );
+}
+
+#[test]
+#[should_panic(expected = "Cannot send to yourself")]
+fn cannot_send_to_yourself() {
+    let mut c = new_contract();
+    set_ctx(USDC, START);
+    c.ft_on_transfer(
+        acc(ALICE),
+        U128(5 * MIN_STREAM_AMOUNT),
+        json!({ "send_to": ALICE }).to_string(),
+    );
 }
 
 #[test]
@@ -673,19 +806,29 @@ fn streams_of_is_paginated() {
 // ---------- owner ----------
 
 #[test]
-fn owner_sets_fees_within_the_cap() {
+fn owner_sets_fees_within_the_bounds() {
     let mut c = new_contract();
     set_ctx(OWNER, START);
-    c.set_fees(U128(MAX_FEE), U128(0));
+    c.set_fees(U128(MAX_FEE), U128(MIN_FEE), U128(50_000));
     assert_eq!(c.config().stream_fee.0, MAX_FEE);
+    assert_eq!(c.config().registration_fee.0, MIN_FEE);
+    assert_eq!(c.config().payout_fee.0, 50_000);
 }
 
 #[test]
-#[should_panic(expected = "Fee above the 1 USDC cap")]
+#[should_panic(expected = "Each fee must be between 0.001 and 1 USDC")]
 fn fees_are_capped() {
     let mut c = new_contract();
     set_ctx(OWNER, START);
-    c.set_fees(U128(MAX_FEE + 1), U128(0));
+    c.set_fees(U128(MAX_FEE + 1), U128(MIN_FEE), U128(MIN_FEE));
+}
+
+#[test]
+#[should_panic(expected = "Each fee must be between 0.001 and 1 USDC")]
+fn fees_cannot_be_zero() {
+    let mut c = new_contract();
+    set_ctx(OWNER, START);
+    c.set_fees(U128(MIN_FEE), U128(MIN_FEE), U128(0));
 }
 
 #[test]
@@ -693,7 +836,7 @@ fn fees_are_capped() {
 fn only_the_owner_sets_fees() {
     let mut c = new_contract();
     set_ctx(EMPLOYER, START);
-    c.set_fees(U128(0), U128(0));
+    c.set_fees(U128(MIN_FEE), U128(MIN_FEE), U128(MIN_FEE));
 }
 
 #[test]
@@ -732,6 +875,94 @@ fn owner_withdraws_fees_and_a_failure_puts_them_back() {
         Err(PromiseError::Failed),
     );
     assert_eq!(c.config().fees_collected.0, FEE);
+}
+
+/// N-02: a fee is booked only once its payout succeeds, so the owner can never withdraw
+/// a fee that a failing payout then has to give back.
+#[test]
+fn fees_in_flight_cannot_be_withdrawn() {
+    let mut c = setup();
+    set_ctx(ALICE, START + 500);
+    c.withdraw(1, None, None);
+    set_callback(START + 500, RICH, unregistered());
+    c.on_receiver_checked(
+        acc(ALICE),
+        acc(ALICE),
+        U128(DEPOSIT / 2),
+        U128(PAY_FEE),
+        from_stream(1),
+    );
+
+    set_ctx(OWNER, START + 500);
+    c.withdraw_fees(U128(FEE), acc(OWNER));
+    assert_eq!(
+        c.config().fees_collected.0,
+        0,
+        "only the stream fee was there to take"
+    );
+
+    set_callback(START + 500, RICH, PromiseResult::Failed);
+    c.on_paid(
+        acc(ALICE),
+        acc(ALICE),
+        U128(DEPOSIT / 2),
+        U128(PAY_FEE + REG_FEE),
+        from_stream(1),
+        Err(PromiseError::Failed),
+    );
+    assert_eq!(c.config().fees_collected.0, 0);
+    assert_eq!(
+        stream(&c, 1).withdrawable.0,
+        DEPOSIT / 2,
+        "Alice gets it all back"
+    );
+}
+
+#[test]
+#[should_panic(expected = "Amount exceeds collected fees")]
+fn owner_cannot_withdraw_unbooked_fees() {
+    let mut c = setup();
+    set_ctx(OWNER, START);
+    c.withdraw_fees(U128(FEE + 1), acc(OWNER));
+}
+
+// ---------- 1.0 callbacks still in flight at the upgrade ----------
+
+#[test]
+fn a_1_0_withdrawal_that_failed_goes_back_to_the_stream() {
+    let mut c = setup();
+    set_ctx(ALICE, START + 500);
+    c.withdraw(1, None, None); // stands in for the 1.0 bookkeeping
+    set_callback(START + 500, RICH, PromiseResult::Failed);
+    assert!(!c.on_withdraw(
+        1,
+        acc(ALICE),
+        acc(ALICE),
+        U128(DEPOSIT / 2),
+        Err(PromiseError::Failed)
+    ));
+    assert_eq!(stream(&c, 1).withdrawn.0, 0);
+    assert_eq!(
+        c.config().fees_collected.0,
+        FEE,
+        "1.0 charged no payout fee"
+    );
+}
+
+#[test]
+fn a_1_0_withdrawal_that_succeeded_is_reported() {
+    let mut c = setup();
+    set_callback(START + 500, RICH, PromiseResult::Successful(vec![]));
+    assert!(c.on_withdraw(1, acc(ALICE), acc(ALICE), U128(5), Ok(())));
+    assert_eq!(events("withdrawn").len(), 1);
+}
+
+#[test]
+fn a_1_0_transfer_that_failed_is_owed() {
+    let mut c = setup();
+    set_callback(START, RICH, PromiseResult::Failed);
+    assert!(!c.on_transfer_or_owe(acc(EMPLOYER), U128(42), Err(PromiseError::Failed)));
+    assert_eq!(c.owed_of(acc(EMPLOYER)).0, 42);
 }
 
 #[test]
@@ -789,6 +1020,7 @@ fn migrates_the_1_0_0_layout_and_keeps_its_data() {
     assert_eq!(c.config().owner, acc(OWNER));
     assert_eq!(c.config().token, acc(USDC));
     assert_eq!(c.config().stream_fee.0, DEFAULT_STREAM_FEE);
+    assert_eq!(c.config().payout_fee.0, DEFAULT_PAYOUT_FEE);
     assert_eq!(stream(&c, 7).withdrawn.0, 3);
     assert_eq!(c.streams_of(acc(ALICE), None, None).len(), 1);
     assert_eq!(c.owed_of(acc(BOB)).0, 42);
@@ -798,13 +1030,14 @@ fn migrates_the_1_0_0_layout_and_keeps_its_data() {
 fn migrating_the_current_layout_changes_nothing() {
     let mut c = setup();
     set_ctx(OWNER, START);
-    c.set_fees(U128(5), U128(6));
+    c.set_fees(U128(5_000), U128(6_000), U128(7_000));
     env::state_write(&c);
     drop(c); // collections write their cached entries when dropped, as at the end of a call
     set_ctx(CONTRACT, START);
     let again = Payday::migrate(None);
-    assert_eq!(again.config().stream_fee.0, 5);
-    assert_eq!(again.config().registration_fee.0, 6);
+    assert_eq!(again.config().stream_fee.0, 5_000);
+    assert_eq!(again.config().registration_fee.0, 6_000);
+    assert_eq!(again.config().payout_fee.0, 7_000);
     assert_eq!(stream(&again, 1).deposit.0, DEPOSIT);
 }
 

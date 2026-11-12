@@ -55,7 +55,7 @@ async fn fixed_h03_fund_then_cancel_costs_the_attacker() -> anyhow::Result<()> {
 
 /// H-03 (was F-04): ten 1 USDC cash-outs to fresh accounts used to cost the contract ten
 /// registrations for free. Now each payout to an unregistered account carries the
-/// registration fee.
+/// registration fee, on top of the payout fee every payout carries (N-01).
 #[tokio::test]
 async fn fixed_h03_cash_outs_pay_their_own_registration() -> anyhow::Result<()> {
     let env = setup().await?;
@@ -82,15 +82,15 @@ async fn fixed_h03_cash_outs_pay_their_own_registration() -> anyhow::Result<()> 
 
     assert_eq!(
         env.usdc_of(&ghost("f04", 9)).await?,
-        USDC - REGISTRATION_FEE
+        USDC - PAYOUT_FEE - REGISTRATION_FEE
     );
     assert_eq!(
         env.fees_collected().await?,
-        STREAM_FEE + 10 * REGISTRATION_FEE
+        STREAM_FEE + 10 * (PAYOUT_FEE + REGISTRATION_FEE)
     );
     println!(
-        "H-03  10 cash-outs to fresh accounts: worker paid {} USDC in registration fees for {:.5} NEAR of registrations",
-        (10 * REGISTRATION_FEE) as f64 / 1e6,
+        "H-03  10 cash-outs to fresh accounts: worker paid {} USDC in fees for {:.5} NEAR of registrations",
+        (10 * (PAYOUT_FEE + REGISTRATION_FEE)) as f64 / 1e6,
         near(10 * REGISTRATION_YOCTO)
     );
     Ok(())
@@ -102,7 +102,7 @@ async fn fixed_h03_cash_outs_pay_their_own_registration() -> anyhow::Result<()> 
 async fn fixed_m01_settled_streams_are_deleted() -> anyhow::Result<()> {
     let env = setup().await?;
     let employer = env.account_with(25 * (USDC + STREAM_FEE)).await?;
-    let sink = env.account_with(1).await?; // registered, so payouts carry no fee
+    let sink = env.account_with(1).await?; // registered, so payouts carry only the payout fee
     let now = env.now().await?;
     let streams: Vec<_> = (0..25)
         .map(|_| (sink.id().clone(), USDC, now - 100, now + 3))
@@ -215,7 +215,7 @@ async fn check_underfunded_payouts_change_nothing() -> anyhow::Result<()> {
         let outcome = env
             .withdraw(
                 &worker,
-                json!({ "stream_id": 1, "amount": "100000" }),
+                json!({ "stream_id": 1, "amount": USDC.to_string() }),
                 Gas::from_tgas(tgas),
             )
             .await?;
@@ -223,7 +223,7 @@ async fn check_underfunded_payouts_change_nothing() -> anyhow::Result<()> {
         let paid = env.usdc_of(worker.id()).await?;
         let fees = env.fees_collected().await? - STREAM_FEE;
         println!(
-            "CHECK withdraw with {tgas} Tgas: success={}, withdrawn={withdrawn}, worker holds {paid}, registration fees {fees}",
+            "CHECK withdraw with {tgas} Tgas: success={}, withdrawn={withdrawn}, worker holds {paid}, payout fees {fees}",
             outcome.is_success()
         );
         assert_eq!(
@@ -232,5 +232,106 @@ async fn check_underfunded_payouts_change_nothing() -> anyhow::Result<()> {
             "books, tokens and fees must agree after a {tgas} Tgas withdraw"
         );
     }
+    Ok(())
+}
+
+/// The contract's USDC balance always equals what it owes: what is left in live streams,
+/// every `owed` balance, and the fees collected. Checked after every step of a mixed run
+/// that includes a failed payout and a fee withdrawal.
+#[tokio::test]
+async fn check_books_match_the_token_balance() -> anyhow::Result<()> {
+    let env = setup().await?;
+    let employer = env.account_with(100 * USDC).await?;
+    let alice = env.sandbox.dev_create_account().await?;
+    let bob = env.sandbox.dev_create_account().await?;
+    let now = env.now().await?;
+    let accounts = [employer.id().clone(), alice.id().clone(), bob.id().clone()];
+
+    let check = |step: &'static str| {
+        let env = &env;
+        let accounts = &accounts;
+        async move {
+            let mut held = env.fees_collected().await?;
+            let mut seen = std::collections::BTreeSet::new();
+            for id in accounts {
+                held += env.owed_of(id).await?;
+                for s in env.streams_of(id, 0, 100).await? {
+                    if seen.insert(s["id"].as_u64().unwrap()) {
+                        held += amount(&s, "deposit") - amount(&s, "withdrawn");
+                    }
+                }
+            }
+            let balance = env.usdc_of(env.payday.id()).await?;
+            assert_eq!(
+                balance, held,
+                "books and token balance differ after: {step}"
+            );
+            println!("CHECK books = token balance = {balance} after: {step}");
+            anyhow::Ok(())
+        }
+    };
+
+    env.fund(
+        &employer,
+        &[
+            (alice.id().clone(), 30 * USDC, now - 1_000, now + 1_000),
+            (bob.id().clone(), 20 * USDC, now - 100, now + 100_000),
+        ],
+    )
+    .await?
+    .into_result()?;
+    check("funding two streams").await?;
+
+    env.withdraw(
+        &alice,
+        json!({ "stream_id": 1, "amount": (5 * USDC).to_string() }),
+        PAYOUT_GAS,
+    )
+    .await?
+    .into_result()?;
+    check("a withdrawal that registers Alice").await?;
+
+    env.owner
+        .call(env.payday.id(), "set_fees")
+        .args_json(json!({
+            "stream_fee": STREAM_FEE.to_string(),
+            "registration_fee": USDC.to_string(),
+            "payout_fee": PAYOUT_FEE.to_string(),
+        }))
+        .transact()
+        .await?
+        .into_result()?;
+    env.withdraw(
+        &alice,
+        json!({ "stream_id": 1, "amount": USDC.to_string(), "receiver": ghost("books", 0) }),
+        PAYOUT_GAS,
+    )
+    .await?
+    .into_result()?;
+    check("a payout that fails on its fees").await?;
+
+    env.cancel(&employer, 2).await?.into_result()?;
+    check("cancelling Bob's stream (dust to owed)").await?;
+
+    env.mint(env.owner.id(), 1).await?; // registered, so all of it reaches the owner
+    let fees = env.fees_collected().await?;
+    env.owner
+        .call(env.payday.id(), "withdraw_fees")
+        .args_json(json!({ "amount": fees.to_string(), "receiver": env.owner.id() }))
+        .gas(PAYOUT_GAS)
+        .transact()
+        .await?
+        .into_result()?;
+    check("the owner withdrawing every fee").await?;
+
+    env.transfer_call(
+        &employer,
+        2 * USDC,
+        json!({ "send_to": bob.id() }).to_string(),
+        FUNDING_GAS,
+    )
+    .await?
+    .into_result()?;
+    check("a send to Bob").await?;
     Ok(())
 }
