@@ -7,24 +7,45 @@ import { LiveStream } from "@/components/landing/LiveStream";
 import { PayCurve } from "@/components/landing/PayCurve";
 import { CASH_OUT_ASSETS } from "@/lib/config";
 
-const STEPS = [
+/** Each side of a payroll, in the order they happen. */
+const TRACKS = [
   {
-    title: "Fund payroll once",
-    body: "Upload a CSV of workers, amounts and dates, and send the total in USDC. One transfer opens every salary.",
+    who: "If you pay people",
+    href: "/employer",
+    cta: "Run a payroll",
+    steps: [
+      ["List your team", "Add workers in the form or drop in a CSV: account, amount, start and end date."],
+      ["Fund it in one transfer", "Send the total in USDC. One transaction opens every salary, from 1 to 25 at a time."],
+      ["Change course any time", "Cancel a stream and the unearned rest comes straight back. Export a CSV for your accountant."],
+    ],
   },
   {
-    title: "Salary accrues by the second",
-    body: "The contract releases each salary continuously between its start and end date. Nobody pushes a button.",
+    who: "If you get paid",
+    href: "/worker",
+    cta: "See my pay",
+    steps: [
+      ["Share your account", "Open My pay and send your employer the account it shows. No wallet to install."],
+      ["Watch it grow", "Your balance rises every second from the start date, in USDC and your local currency."],
+      ["Take it out, gas-free", "Withdraw whenever you like, send it to any NEAR account or cash out to another chain."],
+    ],
+  },
+] as const;
+
+/** The three questions a business asks before trusting a payroll tool. */
+const FACTS = [
+  {
+    q: "Where is the money?",
+    a: "In the Payday contract on NEAR, not with us. It releases each salary by the second and nothing else: no one can take it out early, and cancelling returns only what was not yet earned.",
   },
   {
-    title: "Workers withdraw, gas-free",
-    body: "A worker signs in the browser and Payday's relayer pays the network fee. No wallet to install, no NEAR to buy.",
+    q: "What does it cost?",
+    a: "0.01 USDC per stream and 0.01 USDC per payout, plus a one-time 0.01 USDC to set up an account that has never held USDC. Nobody pays gas: Payday covers it.",
   },
   {
-    title: "Cash out to any chain",
-    body: "Through NEAR Intents the same withdrawal can land as USDC on Base, Solana, Arbitrum or Ethereum, or USDT on Tron.",
+    q: "What can I check?",
+    a: "Everything. Every stream, payout and fee is a public event on NEAR, and a worker's payslip is read live from the contract, so whoever receives it can verify it.",
   },
-];
+] as const;
 
 const TESTNET_EXPLORER = "https://testnet.nearblocks.io";
 
@@ -131,15 +152,45 @@ function How() {
           </div>
         </div>
 
-        <ol className="mt-12 grid gap-px overflow-hidden rounded-2xl border border-border bg-border sm:grid-cols-2 lg:grid-cols-4">
-          {STEPS.map((step, i) => (
-            <li key={step.title} className="group bg-surface p-6 transition-colors duration-200 hover:bg-bg">
-              <div className="num text-xs text-muted transition-colors group-hover:text-accent">0{i + 1}</div>
-              <h3 className="mt-3 font-semibold tracking-tight">{step.title}</h3>
-              <p className="mt-2 text-sm text-muted">{step.body}</p>
-            </li>
+        <div className="mt-12 grid gap-4 lg:grid-cols-2">
+          {TRACKS.map((track) => (
+            <div key={track.who} className="flex flex-col rounded-2xl border border-border bg-bg p-6 sm:p-8">
+              <h3 className="num text-xs uppercase tracking-[0.2em] text-muted">{track.who}</h3>
+              <ol className="mt-5 flex-1 space-y-5">
+                {track.steps.map(([title, body], i) => (
+                  <li key={title} className="group grid grid-cols-[2rem_1fr] gap-x-3">
+                    <span
+                      aria-hidden="true"
+                      className="num grid h-8 w-8 place-items-center rounded-full border border-border text-xs text-muted transition-colors duration-200 group-hover:border-accent group-hover:bg-accent group-hover:text-accent-ink"
+                    >
+                      {i + 1}
+                    </span>
+                    <div>
+                      <p className="font-semibold tracking-tight">{title}</p>
+                      <p className="mt-1 text-sm text-muted">{body}</p>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+              <Link
+                href={track.href}
+                className="group mt-7 inline-flex items-center gap-1.5 self-start text-sm font-medium text-accent hover:underline"
+              >
+                {track.cta}
+                <ArrowRightIcon className="transition-transform duration-200 group-hover:translate-x-0.5" />
+              </Link>
+            </div>
           ))}
-        </ol>
+        </div>
+
+        <dl className="mt-4 grid gap-px overflow-hidden rounded-2xl border border-border bg-border md:grid-cols-3">
+          {FACTS.map((f) => (
+            <div key={f.q} className="bg-surface p-6">
+              <dt className="font-semibold tracking-tight">{f.q}</dt>
+              <dd className="mt-2 text-sm text-muted">{f.a}</dd>
+            </div>
+          ))}
+        </dl>
       </Section>
     </div>
   );
