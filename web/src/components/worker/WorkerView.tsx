@@ -6,12 +6,15 @@ import { GAS_TGAS, config } from "@/lib/config";
 import type { StreamRecord } from "@/lib/csv";
 import { useLedger, useLog, useNow, useRoleAccount } from "@/lib/hooks";
 import { formatUsdc } from "@/lib/money";
+import { monthOf, monthPeriod, recentMonths } from "@/lib/payslip";
 import { explain, isRegisteredForUsdc, paidOut, relayCall } from "@/lib/near";
 import { report } from "@/lib/report";
 import { WaitingAnimation } from "../animations";
 import { ActivityLog, Toasts } from "../feedback";
+import { ArrowUpRightIcon } from "../icons";
 import { BackupBanner, KeyBackup } from "../KeyBackup";
 import { CountAmount, LiveAmount } from "../LiveAmount";
+import { CurrencyPicker, LocalAmount, RateNote } from "../LocalCurrency";
 import { MoveMoney } from "../MoveMoney";
 import { availableNow, fmtDate, progress, ratePerDay, statusOf, withdrawableNow } from "../StreamMath";
 import { AccountChip, Button, Card, CopyButton, LiveDot, Notice, Pill, ProgressBar, Skeleton, Stat, shortId } from "../ui";
@@ -46,6 +49,7 @@ function BalanceHero(props: {
         {streaming.length > 0 &&
           ` · earning ${formatUsdc(perDay)} a day from ${streaming.length} stream${streaming.length === 1 ? "" : "s"}`}
       </p>
+      <LocalAmount units={sumAvailable(streams, now)} className="mt-1 block text-lg text-hero-ink/80" />
       <div className="mt-6 flex flex-wrap items-center gap-4">
         <Button variant="lime" loading={withdrawing} disabled={nothingToWithdraw} onClick={onWithdrawAll}>
           {streams.length > 1 ? "Withdraw all" : "Withdraw"}
@@ -54,6 +58,10 @@ function BalanceHero(props: {
           Payday pays the network fee
           {payoutFee !== null && ` and charges ${formatUsdc(payoutFee)} USDC per withdrawal`}. Withdrawals open at 1 USDC.
         </span>
+      </div>
+      <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-hero-ink/10 pt-4 text-hero-ink/80">
+        <CurrencyPicker />
+        <RateNote className="flex-1" />
       </div>
     </section>
   );
@@ -166,6 +174,44 @@ function WorkerSkeleton() {
   );
 }
 
+/** Proof of income: a monthly payslip anyone can check, read live from the chain. */
+function Payslips({ accountId, streams, now }: { accountId: string; streams: StreamRecord[]; now: number }) {
+  const nowSecs = Math.floor(now / 1000);
+  const months = recentMonths(nowSecs, Math.min(...streams.map((s) => s.start)));
+  const [month, setMonth] = useState<string | null>(null);
+  const chosen = month ?? monthOf(nowSecs);
+  const href = `/payslip?worker=${encodeURIComponent(accountId)}&month=${chosen}`;
+  return (
+    <Card title="Payslips">
+      <p className="text-sm text-muted">
+        A monthly statement of what you earned, for a landlord, bank or visa office. It is read live from the chain each
+        time the link is opened, so whoever you send it to can check it themselves.
+      </p>
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <select
+          aria-label="Payslip month"
+          className="rounded-xl border border-border bg-bg px-3 py-2.5 text-sm"
+          value={chosen}
+          onChange={(e) => setMonth(e.target.value)}
+        >
+          {months.map((m) => (
+            <option key={m} value={m}>
+              {monthPeriod(m, nowSecs)?.label ?? m}
+            </option>
+          ))}
+        </select>
+        <Link
+          href={href}
+          target="_blank"
+          className="inline-flex items-center gap-1.5 rounded-xl bg-accent px-4 py-2.5 text-sm font-medium text-accent-ink transition duration-150 hover:brightness-110 active:scale-[0.97]"
+        >
+          Open payslip <ArrowUpRightIcon />
+        </Link>
+      </div>
+    </Card>
+  );
+}
+
 export function WorkerView() {
   const account = useRoleAccount("worker");
   const accountId = account.status === "ready" ? account.accountId : null;
@@ -230,6 +276,7 @@ export function WorkerView() {
         <Card className="flex flex-col justify-between gap-6">
           <Stat label="In your account" hint="USDC you have already withdrawn">
             <CountAmount value={ledger.balance} />
+            <LocalAmount units={ledger.balance} className="mt-1 block text-sm font-normal text-muted" />
           </Stat>
           <div>
             <div className="text-xs font-medium uppercase tracking-wider text-muted">Your Payday account</div>
@@ -284,6 +331,8 @@ export function WorkerView() {
           log={log.add}
         />
       )}
+
+      {mine.length > 0 && <Payslips accountId={account.accountId} streams={mine} now={now} />}
 
       <div ref={backupCard} className="scroll-mt-24">
         <KeyBackup role="worker" accountId={account.accountId} />
