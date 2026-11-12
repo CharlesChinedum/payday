@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { GAS_TGAS, config } from "@/lib/config";
@@ -9,6 +10,7 @@ import { formatUsdc } from "@/lib/money";
 import { monthOf, monthPeriod, payslipPath, recentMonths } from "@/lib/payslip";
 import { explain, isRegisteredForUsdc, paidOut, relayCall } from "@/lib/near";
 import { report } from "@/lib/report";
+import { MAX_NOTE_LENGTH, parseRequest, requestCardPath, requestPath, requestSummary, type PayRequest } from "@/lib/request";
 import { WaitingAnimation } from "../animations";
 import { ActivityLog, Toasts } from "../feedback";
 import { ArrowUpRightIcon } from "../icons";
@@ -16,8 +18,9 @@ import { BackupBanner, KeyBackup } from "../KeyBackup";
 import { CountAmount, LiveAmount } from "../LiveAmount";
 import { CurrencyPicker, LocalAmount, RateNote } from "../LocalCurrency";
 import { MoveMoney } from "../MoveMoney";
+import { ShareLinks, useOrigin } from "../ShareLinks";
 import { availableNow, fmtDate, progress, ratePerDay, statusOf, withdrawableNow } from "../StreamMath";
-import { AccountChip, Button, Card, CopyButton, LiveDot, Notice, Pill, ProgressBar, Skeleton, Stat, shortId } from "../ui";
+import { AccountChip, Button, Card, CopyButton, Field, LiveDot, Notice, Pill, ProgressBar, Skeleton, Stat, TextInput, shortId } from "../ui";
 
 const sumAvailable = (streams: StreamRecord[], nowMs: number) =>
   streams.reduce((sum, s) => sum + availableNow(s, nowMs), 0n);
@@ -212,6 +215,86 @@ function Payslips({ accountId, streams, now }: { accountId: string; streams: Str
   );
 }
 
+const REQUEST_DAYS = [7, 14, 30, 60, 90, 180, 365];
+
+/**
+ * A link that asks someone to pay you: it opens Run payroll with your stream filled in,
+ * and shows as a card when posted. Nothing moves until the payer funds it themselves.
+ */
+function RequestPayment({ accountId }: { accountId: string }) {
+  const [amount, setAmount] = useState("");
+  const [days, setDays] = useState("30");
+  const [note, setNote] = useState("");
+  const [made, setMade] = useState<PayRequest | null>(null);
+  const origin = useOrigin();
+  const request = parseRequest(new URLSearchParams({ pay: accountId, amount: amount.trim(), days, note }));
+  const edit = (set: (v: string) => void) => (v: string) => {
+    set(v);
+    setMade(null);
+  };
+  return (
+    <Card title="Request payment">
+      <p className="text-sm text-muted">
+        Make a link that asks a client or employer to pay you by the second. It opens Run payroll with your stream
+        filled in; nothing moves until they fund it.
+      </p>
+      <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,2fr)]">
+        <Field label="Amount (USDC)">
+          <TextInput className="num" inputMode="decimal" placeholder="3000" value={amount} onChange={(e) => edit(setAmount)(e.target.value)} />
+        </Field>
+        <Field label="Paid over">
+          <select
+            className="w-full rounded-xl border border-border bg-bg px-3 py-2.5 text-sm"
+            value={days}
+            onChange={(e) => edit(setDays)(e.target.value)}
+          >
+            {REQUEST_DAYS.map((d) => (
+              <option key={d} value={d}>
+                {d} days
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="What it is for (optional)">
+          <TextInput
+            maxLength={MAX_NOTE_LENGTH}
+            placeholder="Design work, November"
+            value={note}
+            onChange={(e) => edit(setNote)(e.target.value)}
+          />
+        </Field>
+      </div>
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <Button disabled={!request} onClick={() => setMade(request)}>
+          Make link
+        </Button>
+        <span className="text-sm text-muted">
+          {request ? requestSummary(request) : amount.trim() ? "Enter at least 1 USDC, like 3000 or 12.50" : ""}
+        </span>
+      </div>
+      {made && origin && (
+        <div className="mt-5 flex animate-rise flex-col gap-4 border-t border-border pt-5 sm:flex-row sm:items-start">
+          <Image
+            src={requestCardPath(made)}
+            alt={`Link preview: pay ${requestSummary(made)}`}
+            width={1200}
+            height={630}
+            unoptimized
+            className="w-full rounded-lg border border-border sm:w-72"
+          />
+          <div className="min-w-0 space-y-3">
+            <p className="num break-all rounded-lg bg-surface-2 px-3 py-2 text-xs">{`${origin}${requestPath(made)}`}</p>
+            <ShareLinks
+              link={`${origin}${requestPath(made)}`}
+              text={`Pay me ${requestSummary(made)} with Payday: salary streams to me by the second on NEAR.`}
+            />
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 export function WorkerView() {
   const account = useRoleAccount("worker");
   const accountId = account.status === "ready" ? account.accountId : null;
@@ -333,6 +416,8 @@ export function WorkerView() {
       )}
 
       {mine.length > 0 && <Payslips accountId={account.accountId} streams={mine} now={now} />}
+
+      <RequestPayment accountId={account.accountId} />
 
       <div ref={backupCard} className="scroll-mt-24">
         <KeyBackup role="worker" accountId={account.accountId} />

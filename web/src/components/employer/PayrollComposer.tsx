@@ -93,10 +93,12 @@ export function PayrollComposer(props: {
   title?: string;
   /** A DAO can top up its treasury before the vote passes, so a shortfall only warns. */
   allowShortfall?: boolean;
+  /** Starts the form with this row, e.g. from a request-to-be-paid link. */
+  initialRow?: DraftRow;
 }) {
   const { balance, streamFee, nowSecs, ownWorkerId, funding, disabled, onFund } = props;
   const { payer = "You need", submitLabel = "Fund payroll", title = "New payroll", allowShortfall = false } = props;
-  const [drafts, setDrafts] = useState<Draft[]>([{ ...EMPTY_DRAFT_ROW, id: 0 }]);
+  const [drafts, setDrafts] = useState<Draft[]>([{ ...(props.initialRow ?? EMPTY_DRAFT_ROW), id: 0 }]);
   const [dragging, setDragging] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const nextId = useRef(1);

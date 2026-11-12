@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter, useSearchParams } from "next/navigation";
 import { useRef, useState } from "react";
 import { GAS_TGAS, ONE_YOCTO, config } from "@/lib/config";
 import { fundingMsg, streamsCsv, summarizeRows, type PayrollRow, type StreamRecord } from "@/lib/csv";
@@ -8,6 +9,7 @@ import { formatUsdc } from "@/lib/money";
 import { explain, paidOut, payoutFailure, relayCall, requestTestUsdc } from "@/lib/near";
 import { eventsNamed } from "@/lib/outcome";
 import { report } from "@/lib/report";
+import { parseRequest, requestDraft, requestSummary, type PayRequest } from "@/lib/request";
 import { WaitingAnimation } from "../animations";
 import { ActivityLog, Toasts } from "../feedback";
 import { DownloadIcon } from "../icons";
@@ -39,6 +41,17 @@ function payrollTotals(streams: StreamRecord[], now: number) {
   };
 }
 
+/** A request-to-be-paid link opened here: say who is asking and what, before the form. */
+function RequestNotice({ request }: { request: PayRequest }) {
+  return (
+    <Notice tone="info">
+      <span className="num break-all">{request.worker}</span> asked to be paid {requestSummary(request)}
+      {request.note && <> for &ldquo;{request.note}&rdquo;</>}. It is filled in below, from today. Anyone can make a
+      request link, so check the account with the person before you fund it.
+    </Notice>
+  );
+}
+
 function EmployerSkeleton() {
   return (
     <div className="space-y-6" aria-busy="true" aria-label="Setting up your Payday account">
@@ -58,6 +71,10 @@ export function EmployerView() {
   const log = useLog();
   const [action, setAction] = useState<Action | null>(null);
   const backupCard = useRef<HTMLDivElement>(null);
+  const params = useSearchParams();
+  const router = useRouter();
+  const request = parseRequest(params);
+  const requestKey = request ? params.toString() : "";
 
   if (account.status === "loading") return <EmployerSkeleton />;
   if (account.status === "error") return <Notice tone="error">{account.error}</Notice>;
@@ -98,6 +115,7 @@ export function EmployerView() {
           ? { ok: true, text: `Funded ${summarizeRows(rows)}. Salaries are streaming.` }
           : { ok: false, text: `Payroll refunded: ${explain(o, "Payday rejected the payroll")}` },
       );
+      if (outcome === "done" && request) router.replace("/employer", { scroll: false });
       return outcome === "done";
     });
 
@@ -156,7 +174,11 @@ export function EmployerView() {
         </div>
       </Card>
 
+      {request && <RequestNotice request={request} />}
+
       <PayrollComposer
+        key={requestKey}
+        initialRow={request ? requestDraft(request, Math.floor(now / 1000)) : undefined}
         balance={ledger.balance}
         streamFee={ledger.fees?.stream ?? null}
         nowSecs={Math.floor(now / 1000)}

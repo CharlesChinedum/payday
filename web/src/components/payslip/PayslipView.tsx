@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { isNearAccountId } from "@/lib/address";
 import { accountUrl, config } from "@/lib/config";
 import type { StreamRecord } from "@/lib/csv";
@@ -12,9 +12,8 @@ import { getStreams, view } from "@/lib/near";
 import { HIDE_AMOUNT, monthOf, monthPeriod, payslipCardPath, payslipLines, payslipPath, recentMonths, shareText, type Period } from "@/lib/payslip";
 import { formatLocal, toLocal } from "@/lib/rates";
 import { CurrencyPicker, RateNote, useCurrency, useRates } from "../LocalCurrency";
-import { Button, CopyButton, ExplorerLink, Notice, Skeleton, shortId } from "../ui";
-
-const noop = () => () => {};
+import { ShareLinks, useOrigin } from "../ShareLinks";
+import { Button, ExplorerLink, Notice, Skeleton, shortId } from "../ui";
 
 type Load =
   | { status: "loading" }
@@ -255,19 +254,14 @@ function Payslip(props: {
   );
 }
 
-const SHARE_LINK =
-  "inline-flex items-center gap-1.5 rounded-lg border border-border px-2 py-1 text-xs font-medium text-muted transition duration-150 hover:text-text active:scale-95";
-
 /**
  * Sharing: the link unfurls into a card drawn from the chain on X, WhatsApp and Telegram.
  * The card can leave the amount out; the payslip itself always shows it.
  */
 function SharePanel(props: { worker: string; period: Period; hideAmount: boolean; onHideAmount: (hide: boolean) => void }) {
   const { worker, period, hideAmount, onHideAmount } = props;
-  const origin = useSyncExternalStore(noop, () => window.location.origin, () => "");
+  const origin = useOrigin();
   const link = `${origin}${payslipPath(worker, period.month, hideAmount)}`;
-  const text = shareText(period);
-  const q = encodeURIComponent;
   return (
     <section className="rounded-2xl border border-border p-4 sm:p-5 print:hidden">
       <h2 className="text-sm font-medium">Share this payslip</h2>
@@ -297,20 +291,7 @@ function SharePanel(props: { worker: string; period: Period; hideAmount: boolean
               <span className="block text-xs text-muted">People who open the link still see the full payslip.</span>
             </span>
           </label>
-          {origin && (
-            <div className="flex flex-wrap gap-2">
-              <CopyButton value={link} label="Copy link" />
-              <a className={SHARE_LINK} target="_blank" rel="noopener noreferrer" href={`https://x.com/intent/post?text=${q(text)}&url=${q(link)}`}>
-                Post on X
-              </a>
-              <a className={SHARE_LINK} target="_blank" rel="noopener noreferrer" href={`https://wa.me/?text=${q(`${text} ${link}`)}`}>
-                WhatsApp
-              </a>
-              <a className={SHARE_LINK} target="_blank" rel="noopener noreferrer" href={`https://t.me/share/url?url=${q(link)}&text=${q(text)}`}>
-                Telegram
-              </a>
-            </div>
-          )}
+          {origin && <ShareLinks link={link} text={shareText(period)} />}
         </div>
       </div>
     </section>
