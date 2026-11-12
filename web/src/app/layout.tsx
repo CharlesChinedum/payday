@@ -25,7 +25,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <SiteHeader />
         </Suspense>
         <main className="flex-1">{children}</main>
-        <footer className="border-t border-border">
+        <footer className="border-t border-border print:hidden">
           <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-6 text-xs text-muted sm:px-6">
             <span>Built at NEAR HACKATHON 2026. Contracts and relayer are open source.</span>
             <a className="underline underline-offset-4 hover:text-text" href="https://github.com/CharlesChinedum/payday">

@@ -70,6 +70,22 @@
   }
 }
 
+/* Paper is light whatever the screen theme, so printed payslips never come out dark. */
+@media print {
+  :root,
+  :root[data-theme="dark"],
+  :root:not([data-theme="light"]) {
+    --bg: #ffffff;
+    --surface: #ffffff;
+    --surface-2: #f2f2f2;
+    --border: #cccccc;
+    --text: #000000;
+    --muted: #444444;
+    --paper: #ffffff;
+    color-scheme: light;
+  }
+}
+
 @theme inline {
   --color-bg: var(--bg);
   --color-surface: var(--surface);
