@@ -205,7 +205,11 @@ function DraftPanel({ dao, draft, policy, signer, onClose }: { dao: string; draf
         <ol className="mb-4 list-decimal space-y-1 pl-5 text-sm text-muted">
           <li>Submit it: run this with the NEAR CLI. It attaches the DAO&apos;s {nearAmount(policy.proposal_bond)} NEAR proposal bond.</li>
           <li>Your council votes. It needs {thresholdText(callThreshold(policy))}.</li>
-          <li>The vote that passes it sends the USDC to Payday, and every salary starts streaming at its start date.</li>
+          <li>
+            {paydayActionOf(draft.proposal.kind, ctx)?.kind === "cancel"
+              ? "The vote that passes it stops the stream. The unearned rest returns to the treasury; the contributor keeps what they earned."
+              : "The vote that passes it sends the USDC to Payday, and every salary starts streaming at its start date."}
+          </li>
         </ol>
         <p className="mb-3 rounded-xl bg-surface-2 px-4 py-3 text-sm">“{draft.proposal.description}”</p>
         <Command text={proposeCommand(dao, draft, policy.proposal_bond, signer, config.networkId)} />

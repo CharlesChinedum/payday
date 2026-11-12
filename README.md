@@ -64,6 +64,7 @@ Fees pay for what Payday spends on its users' behalf: storage for streams, USDC 
 |---|---|
 | Payday | [`app.payday-dev.testnet`](https://testnet.nearblocks.io/address/app.payday-dev.testnet) |
 | Mock USDC (6 decimals) | [`usdc.payday-dev.testnet`](https://testnet.nearblocks.io/address/usdc.payday-dev.testnet) |
+| Demo DAO (Sputnik v2, 2-member council) | [`payday-demo.sputnikv2.testnet`](https://testnet.nearblocks.io/address/payday-demo.sputnikv2.testnet) |
 
 The testnet contract started as version 1.0.0 and was upgraded in place to 2.0.0, keeping every stream (`scripts/testnet.sh migrate-v1`).
 
@@ -90,7 +91,7 @@ You should see ✓ lines for the faucet, both accounts, funding, a withdrawal, a
 
 ### 0b. Pay from a DAO
 
-Open https://payday-near-eight.vercel.app/dao and enter a Sputnik DAO on testnet (for example one made at `sputnikv2.testnet`).
+Open https://payday-near-eight.vercel.app/dao?dao=payday-demo.sputnikv2.testnet. This demo DAO pays two contributors through Payday: proposal 0 was drafted on this page, submitted ([`28cPowAF…`](https://testnet.nearblocks.io/txns/28cPowAFVD3HNkMN3BCv7fR3eJG3rQ6Cv1PJdfXgZd8R)) and passed by both council members; the passing vote ([`HUCZYyax…`](https://testnet.nearblocks.io/txns/HUCZYyaxNbrh1eSmSKaXfzfLC3rAC18LnJk3uWg5pzo8)) moved 1,000.02 USDC from the DAO to Payday and opened streams #10 and #11 with the DAO as employer. Any other testnet Sputnik DAO works the same way.
 
 1. You see the DAO's USDC, the salaries it pays, who votes and the vote threshold.
 2. Add contributors and click **Draft proposal**. You get a ready-to-run NEAR CLI command that submits it with the DAO's bond.

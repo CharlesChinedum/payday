@@ -38,6 +38,7 @@ function buildConfig(): NetworkConfig {
         originAsset: ORIGIN_ASSET,
         hasFaucet: true,
         demoStreamId: 1,
+        demoDao: "payday-demo.sputnikv2.testnet",
       };
     case "mainnet":
       return {
