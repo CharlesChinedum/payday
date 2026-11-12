@@ -11,9 +11,10 @@ describe("restoring a backup", () => {
   });
 
   it("rejects a phrase with a typo instead of opening a different account", () => {
-    const words = generateSeedPhrase().seedPhrase.split(" ");
-    words[3] = words[3] === "abandon" ? "ability" : "abandon";
-    expect(() => parseBackup(words.join(" "))).toThrow("typo");
+    // "abandon" ×11 + "about" is a valid phrase; changing its last word breaks the checksum.
+    const valid = `${"abandon ".repeat(11)}about`;
+    expect(() => parseBackup(valid)).not.toThrow();
+    expect(() => parseBackup("abandon ".repeat(12).trim())).toThrow("typo");
   });
 
   it("accepts a raw secret key and rejects anything else", () => {

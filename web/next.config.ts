@@ -5,10 +5,16 @@ const isDev = process.env.NODE_ENV === "development";
 const rpcOrigin = new URL(rpcUrlFor(process.env.NEXT_PUBLIC_NETWORK, process.env.NEXT_PUBLIC_RPC_URL)).origin;
 
 /**
- * A nonce-based CSP would force every page to render dynamically, which Partial
- * Prerendering (Cache Components) does not support, so inline scripts stay allowed.
- * What this policy does guarantee: no third-party scripts, and an injected script cannot
- * send anything (such as a key) anywhere but this app and the NEAR RPC, nor frame the app.
+ * Defence in depth, not a guarantee. A nonce-based CSP would force every page to render
+ * dynamically, which Partial Prerendering (Cache Components) does not support, so inline
+ * scripts stay allowed and the policy does not stop an injected script from running.
+ *
+ * What it does: loads no third-party scripts, styles or fonts; keeps fetch/XHR to this
+ * app and the NEAR RPC; blocks plugins, `<base>` rewrites, cross-site form posts and
+ * framing. What it does not: an injected script could still navigate the page elsewhere
+ * with data in the URL, or use the key in this browser to sign a transfer through the
+ * app's own relayer. The real protection is that no user or third-party content is ever
+ * rendered as HTML.
  */
 const csp = [
   "default-src 'self'",

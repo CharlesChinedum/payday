@@ -1,3 +1,4 @@
+import { ONE_USDC } from "@/lib/config";
 import type { StreamRecord } from "@/lib/csv";
 import { vestedSmooth } from "@/lib/money";
 
@@ -5,6 +6,16 @@ import { vestedSmooth } from "@/lib/money";
 export function availableNow(s: StreamRecord, nowMs: number): bigint {
   const v = vestedSmooth(BigInt(s.deposit), s.start, s.stop, nowMs) - BigInt(s.withdrawn);
   return v > 0n ? v : 0n;
+}
+
+/**
+ * What withdrawing everything vested would take right now, or 0 if Payday would refuse it:
+ * a withdrawal must be at least 1 USDC (or empty the stream) and more than its fees.
+ */
+export function withdrawableNow(s: StreamRecord, nowMs: number, maxFees: bigint): bigint {
+  const available = availableNow(s, nowMs);
+  const left = BigInt(s.deposit) - BigInt(s.withdrawn);
+  return (available >= ONE_USDC || available === left) && available > maxFees ? available : 0n;
 }
 
 /** USDC base units per day. */

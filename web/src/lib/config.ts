@@ -81,6 +81,7 @@ export const GAS_TGAS = {
 } as const;
 
 /** Destinations a worker can cash out to through NEAR Intents 1Click. */
+/** Every destination is a 6-decimal dollar stablecoin, so its base units compare 1:1 with USDC's. */
 export const CASH_OUT_ASSETS = [
   { id: "nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near", label: "USDC on Base", kind: "evm" },
   { id: "nep141:arb-0xaf88d065e77c8cc2239327c5edb3a432268e5831.omft.near", label: "USDC on Arbitrum", kind: "evm" },

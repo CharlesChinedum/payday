@@ -13,17 +13,24 @@ import { ActivityLog, Toasts } from "../feedback";
 import { BackupBanner, KeyBackup } from "../KeyBackup";
 import { CountAmount, LiveAmount } from "../LiveAmount";
 import { MoveMoney } from "../MoveMoney";
-import { availableNow, fmtDate, progress, ratePerDay, statusOf } from "../StreamMath";
+import { availableNow, fmtDate, progress, ratePerDay, statusOf, withdrawableNow } from "../StreamMath";
 import { AccountChip, Button, Card, CopyButton, LiveDot, Notice, Pill, ProgressBar, Skeleton, Stat, shortId } from "../ui";
 
 const sumAvailable = (streams: StreamRecord[], nowMs: number) =>
   streams.reduce((sum, s) => sum + availableNow(s, nowMs), 0n);
 
-function BalanceHero(props: { streams: StreamRecord[]; now: number; withdrawing: boolean; onWithdrawAll: () => void }) {
-  const { streams, now, withdrawing, onWithdrawAll } = props;
+function BalanceHero(props: {
+  streams: StreamRecord[];
+  now: number;
+  maxFees: bigint;
+  payoutFee: bigint | null;
+  withdrawing: boolean;
+  onWithdrawAll: () => void;
+}) {
+  const { streams, now, maxFees, payoutFee, withdrawing, onWithdrawAll } = props;
   const streaming = streams.filter((s) => statusOf(s, now) === "streaming");
   const perDay = streaming.reduce((sum, s) => sum + ratePerDay(s), 0n);
-  const nothingToWithdraw = sumAvailable(streams, now) === 0n;
+  const nothingToWithdraw = streams.every((s) => withdrawableNow(s, now, maxFees) === 0n);
 
   return (
     <section className="relative overflow-hidden rounded-3xl bg-hero p-6 text-hero-ink sm:p-8">
@@ -43,14 +50,24 @@ function BalanceHero(props: { streams: StreamRecord[]; now: number; withdrawing:
         <Button variant="lime" loading={withdrawing} disabled={nothingToWithdraw} onClick={onWithdrawAll}>
           {streams.length > 1 ? "Withdraw all" : "Withdraw"}
         </Button>
-        <span className="text-xs text-hero-ink/60">Payday pays the network fee.</span>
+        <span className="text-xs text-hero-ink/60">
+          Payday pays the network fee
+          {payoutFee !== null && ` and charges ${formatUsdc(payoutFee)} USDC per withdrawal`}. Withdrawals open at 1 USDC.
+        </span>
       </div>
     </section>
   );
 }
 
-function StreamRow(props: { stream: StreamRecord; now: number; busy: boolean; loading: boolean; onWithdraw: () => void }) {
-  const { stream, now, busy, loading, onWithdraw } = props;
+function StreamRow(props: {
+  stream: StreamRecord;
+  now: number;
+  maxFees: bigint;
+  busy: boolean;
+  loading: boolean;
+  onWithdraw: () => void;
+}) {
+  const { stream, now, maxFees, busy, loading, onWithdraw } = props;
   const status = statusOf(stream, now);
   return (
     <li className="grid gap-4 py-5 first:pt-0 last:pb-0 sm:grid-cols-[1fr_auto] sm:items-center">
@@ -74,7 +91,7 @@ function StreamRow(props: { stream: StreamRecord; now: number; busy: boolean; lo
       </div>
       <div className="flex items-center justify-between gap-4 sm:justify-end">
         <LiveAmount className="text-lg font-medium" amountAt={(nowMs) => availableNow(stream, nowMs)} />
-        <Button variant="secondary" loading={loading} disabled={busy || availableNow(stream, now) === 0n} onClick={onWithdraw}>
+        <Button variant="secondary" loading={loading} disabled={busy || withdrawableNow(stream, now, maxFees) === 0n} onClick={onWithdraw}>
           Withdraw
         </Button>
       </div>
@@ -115,7 +132,7 @@ function NoSalaryYet({ accountId }: { accountId: string }) {
 }
 
 /** Shown until the worker's account can hold USDC, so the one-time fee is not a surprise. */
-function FirstWithdrawalNote({ accountId, fee }: { accountId: string; fee: bigint }) {
+function FirstWithdrawalNote({ accountId, fee, payoutFee }: { accountId: string; fee: bigint; payoutFee: bigint }) {
   const [registered, setRegistered] = useState<boolean | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -131,7 +148,7 @@ function FirstWithdrawalNote({ accountId, fee }: { accountId: string; fee: bigin
   return (
     <Notice>
       Your first withdrawal sets up your account to hold USDC. Payday deducts a one-time {formatUsdc(fee)} USDC for
-      it; after that, withdrawals arrive in full.
+      it; after that, each withdrawal carries only the {formatUsdc(payoutFee)} USDC payout fee.
     </Notice>
   );
 }
@@ -170,7 +187,7 @@ export function WorkerView() {
     report(log.add, res, (o) => {
       const paid = paidOut(o).find((p) => p.source === "stream");
       if (!paid) return { ok: false, text: `Withdrawal did not go through: ${explain(o, "the payout failed")}` };
-      const fee = paid.fee > 0n ? ` (${formatUsdc(paid.fee)} USDC one-time account setup)` : "";
+      const fee = paid.fee > 0n ? ` after ${formatUsdc(paid.fee)} USDC in Payday fees` : "";
       return { ok: true, text: `Withdrew ${formatUsdc(paid.amount, 6)} USDC from stream #${streamId}${fee}. You paid no gas.` };
     });
   }
@@ -186,7 +203,9 @@ export function WorkerView() {
     ledger.refresh();
   }
 
-  const withdrawable = mine.filter((s) => availableNow(s, now) > 0n).map((s) => s.id);
+  // The most a withdrawal can be charged: the payout fee, plus registration the first time.
+  const maxFees = ledger.fees ? ledger.fees.payout + ledger.fees.registration : 0n;
+  const withdrawable = mine.filter((s) => withdrawableNow(s, now, maxFees) > 0n).map((s) => s.id);
 
   return (
     <div className="space-y-6">
@@ -200,7 +219,14 @@ export function WorkerView() {
       <BackupBanner role="worker" onOpen={() => backupCard.current?.scrollIntoView({ behavior: "smooth" })} />
 
       <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
-        <BalanceHero streams={mine} now={now} withdrawing={busy} onWithdrawAll={() => withdraw(withdrawable)} />
+        <BalanceHero
+          streams={mine}
+          now={now}
+          maxFees={maxFees}
+          payoutFee={ledger.fees?.payout ?? null}
+          withdrawing={busy}
+          onWithdrawAll={() => withdraw(withdrawable)}
+        />
         <Card className="flex flex-col justify-between gap-6">
           <Stat label="In your account" hint="USDC you have already withdrawn">
             <CountAmount value={ledger.balance} />
@@ -230,6 +256,7 @@ export function WorkerView() {
                 key={s.id}
                 stream={s}
                 now={now}
+                maxFees={maxFees}
                 busy={busy}
                 loading={pending.includes(s.id)}
                 onWithdraw={() => withdraw([s.id])}
@@ -241,7 +268,7 @@ export function WorkerView() {
       </Card>
 
       {mine.length > 0 && ledger.balance === 0n && ledger.fees && (
-        <FirstWithdrawalNote accountId={account.accountId} fee={ledger.fees.registration} />
+        <FirstWithdrawalNote accountId={account.accountId} fee={ledger.fees.registration} payoutFee={ledger.fees.payout} />
       )}
 
       {(mine.length > 0 || ledger.balance > 0n || ledger.owed > 0n) && (

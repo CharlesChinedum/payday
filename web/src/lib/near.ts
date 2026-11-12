@@ -151,11 +151,13 @@ export const getOwed = async (accountId: string) =>
 export interface Fees {
   stream: bigint;
   registration: bigint;
+  /** Charged on every withdrawal, claim and send. */
+  payout: bigint;
 }
 
 export async function getFees(): Promise<Fees> {
-  const c = await view<{ stream_fee: string; registration_fee: string }>(config.payday, "config");
-  return { stream: BigInt(c.stream_fee), registration: BigInt(c.registration_fee) };
+  const c = await view<{ stream_fee: string; registration_fee: string; payout_fee: string }>(config.payday, "config");
+  return { stream: BigInt(c.stream_fee), registration: BigInt(c.registration_fee), payout: BigInt(c.payout_fee) };
 }
 
 // ---------- reading outcomes ----------

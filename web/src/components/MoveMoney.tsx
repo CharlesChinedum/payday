@@ -7,7 +7,7 @@ import { CASH_OUT_ASSETS, GAS_TGAS, ONE_USDC, ONE_YOCTO, config, type CashOutAss
 import type { StreamRecord } from "@/lib/csv";
 import type { LogFn } from "@/lib/hooks";
 import { formatUsdc, parseUsdc, usdcDecimal } from "@/lib/money";
-import { explain, isRegisteredForUsdc, paidOut, relayCall, type Fees, type RelayResult } from "@/lib/near";
+import { explain, getFees, isRegisteredForUsdc, paidOut, relayCall, type Fees, type RelayResult } from "@/lib/near";
 import { report } from "@/lib/report";
 import { availableNow } from "./StreamMath";
 import { Button, Card, Field, Notice, Pill, TextInput, shortId } from "./ui";
@@ -25,6 +25,13 @@ interface Offer {
   quote: Quote;
   deadline: number;
   asset: CashOutAsset;
+  /** What leaves the account: exactly the quote's amountIn plus the fees Payday will deduct. */
+  gross: bigint;
+}
+
+/** Payday's fees on a payout to `receiver`: the payout fee, plus registration if it is new to USDC. */
+async function feesFor(receiver: string, fees: Fees): Promise<bigint> {
+  return fees.payout + ((await isRegisteredForUsdc(receiver)) ? 0n : fees.registration);
 }
 
 interface CashOutRecord {
@@ -146,8 +153,8 @@ function QuoteSummary({ offer, gross, now }: { offer: Offer; gross: bigint; now:
         ))}
       </dl>
       <p className="mt-3 text-xs text-muted">
-        Includes the one-time 0.01 USDC setup for the deposit address and NEAR Intents&apos; fees. If the swap cannot
-        complete, the USDC is refunded to your Payday account.{" "}
+        Includes Payday&apos;s payout fee, setting up the deposit address if it is new, and NEAR Intents&apos; fees. If
+        the swap cannot complete, the USDC is refunded to your Payday account.{" "}
         {secondsLeft > 0 ? `Quote valid for ${Math.floor(secondsLeft / 60)}:${String(secondsLeft % 60).padStart(2, "0")}.` : "This quote has expired."}
       </p>
     </div>
@@ -183,6 +190,9 @@ export function MoveMoney(props: {
   const { records, add } = useCashOutRecords(accountId, log);
 
   const registrationFee = fees?.registration ?? 0n;
+  const payoutFee = fees?.payout ?? 0n;
+  // Claiming into this account adds registration only if it has never held USDC.
+  const claimFees = payoutFee + (balance > 0n ? 0n : registrationFee);
   // One payout draws from one stream, so salary comes from the stream with the most.
   const stream = streams.reduce<StreamRecord | null>(
     (best, s) => (!best || availableNow(s, now) > availableNow(best, now) ? s : best),
@@ -225,19 +235,22 @@ export function MoveMoney(props: {
     if (typeof amount === "string") return setError(amount);
     const address = checkAddress(asset.kind, recipient);
     if (!address.ok) return setError(address.reason);
+    if (!fees) return setError("Still reading Payday's fees; try again in a moment");
+    // NEAR Intents must receive exactly amountIn, so quote for what is left after Payday's
+    // fees, assuming a fresh deposit address that needs registering.
+    const amountIn = amount - fees.payout - fees.registration;
+    if (amountIn < ONE_USDC) return setError(`Cash out at least ${formatUsdc(ONE_USDC + fees.payout + fees.registration)} USDC`);
     setBusy("quote");
     setError(null);
     try {
-      // A fresh deposit address needs registering, which Payday deducts from the payout,
-      // so quote for what will arrive.
-      const amountIn = amount - registrationFee;
       const { quote, deadline } = await fetchQuote({
         amount: amountIn.toString(),
         destination: asset.id,
         recipient: address.address,
         refundTo: accountId,
       });
-      setOffer({ quote, deadline, asset });
+      const gross = BigInt(quote.amountIn) + (quote.depositAddress ? await feesFor(quote.depositAddress, fees) : fees.payout + fees.registration);
+      setOffer({ quote, deadline, asset, gross });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -252,8 +265,12 @@ export function MoveMoney(props: {
     setBusy("send");
     try {
       const amountIn = BigInt(current.quote.amountIn);
-      // NEAR Intents expects exactly amountIn: add the setup fee only if Payday will charge it.
-      const gross = (await isRegisteredForUsdc(depositAddress)) ? amountIn : amountIn + registrationFee;
+      // Re-read the fees: if they changed since the quote, the deposit would not match it.
+      const gross = amountIn + (await feesFor(depositAddress, await getFees()));
+      if (gross !== current.gross) {
+        setOffer(null);
+        return setError("Payday's fees changed since this quote. Get a new one.");
+      }
       if (gross > available) return setError("The amount available changed. Get a new quote.");
       const res = await pay(depositAddress, gross);
       const outcome = report(log, res, (o) => {
@@ -285,7 +302,7 @@ export function MoveMoney(props: {
       report(log, res, (o) => {
         const paid = paidOut(o).find((p) => p.receiver === receiver);
         if (!paid) return { ok: false, text: `Not sent: ${explain(o, "the payout failed")}` };
-        const fee = paid.fee > 0n ? ` (${formatUsdc(paid.fee)} USDC set up their account)` : "";
+        const fee = paid.fee > 0n ? ` (after ${formatUsdc(paid.fee)} USDC in Payday fees)` : "";
         return { ok: true, text: `Sent ${formatUsdc(paid.amount)} USDC to ${shortId(receiver)}${fee}` };
       });
       setAmountText("");
@@ -312,7 +329,7 @@ export function MoveMoney(props: {
   }
 
   const depositAddress = offer?.quote.depositAddress ?? null;
-  const offerGross = offer ? BigInt(offer.quote.amountIn) + registrationFee : 0n;
+  const offerGross = offer?.gross ?? 0n;
   const expired = offer ? now >= offer.deadline : false;
   const nothingToMove = available === 0n;
 
@@ -324,9 +341,13 @@ export function MoveMoney(props: {
             <span className="num font-medium">{formatUsdc(owed, 6)} USDC</span> is waiting for you: salary left over
             from a cancelled stream, or a transfer that could not complete.
           </p>
-          <Button loading={busy === "claim"} disabled={busy !== null} onClick={claim}>
-            Claim
-          </Button>
+          {owed > claimFees ? (
+            <Button loading={busy === "claim"} disabled={busy !== null} onClick={claim}>
+              Claim
+            </Button>
+          ) : (
+            <span className="text-xs text-muted">Too small to cover the {formatUsdc(claimFees)} USDC in fees</span>
+          )}
         </div>
       )}
 
@@ -420,7 +441,8 @@ export function MoveMoney(props: {
       </div>
       {destination === "near" && (
         <p className="mt-2 text-xs text-muted">
-          If that account has never held USDC, {formatUsdc(registrationFee)} USDC is deducted to set it up.
+          Payday deducts {formatUsdc(payoutFee)} USDC per payout, plus {formatUsdc(registrationFee)} USDC if that account
+          has never held USDC.
         </p>
       )}
 

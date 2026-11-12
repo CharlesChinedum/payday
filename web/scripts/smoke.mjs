@@ -110,7 +110,7 @@ const { id: streamId } = expectEvent(funded, "stream_created", "employer funded 
 const worker = await onboard("worker", workerKey);
 const withdrawDelegate = await signedDelegate(worker, PAYDAY, "withdraw", { stream_id: streamId }, 100);
 const withdrawn = await ok("/api/relay", { signedDelegate: withdrawDelegate });
-const paid = expectEvent(withdrawn, "paid", "worker withdrew, paying the one-time setup fee");
+const paid = expectEvent(withdrawn, "paid", "worker withdrew, paying the payout fee and the one-time setup fee");
 const balance = BigInt(await view(USDC, "ft_balance_of", { account_id: worker.accountId }));
 if (balance !== BigInt(paid.amount) || balance < SALARY / 2n - ONE_USDC) {
   throw new Error(`worker balance ${balance} does not match the ${paid.amount} paid (about half of ${SALARY})`);
@@ -147,6 +147,13 @@ await expectRefused("replaying a delegate that was already used (H-01)", post("/
 
 const claim = await signedDelegate(worker, PAYDAY, "claim_owed", {}, 100);
 await expectRefused("a call with nothing to claim (pre-flight)", post("/api/relay", { signedDelegate: claim }), 409);
+
+const dust = await signedDelegate(worker, PAYDAY, "withdraw", { stream_id: streamId, amount: "1" }, 100);
+await expectRefused("a dust withdrawal the relayer would pay for (N-01)", post("/api/relay", { signedDelegate: dust }), 409);
+const toSelf = await signedDelegate(worker, USDC, "ft_transfer_call", { receiver_id: PAYDAY, amount: ONE_USDC.toString(), msg: JSON.stringify({ send_to: worker.accountId }) }, 150, 1n);
+await expectRefused("a send to yourself (N-01)", post("/api/relay", { signedDelegate: toSelf }), 409);
+const underGassed = await signedDelegate(worker, PAYDAY, "withdraw", { stream_id: streamId }, 40);
+await expectRefused("an under-gassed withdrawal that would fail part-way (N-01)", post("/api/relay", { signedDelegate: underGassed }), 403);
 
 await expectRefused(
   "a cross-site POST (M-09)",

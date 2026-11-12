@@ -86,9 +86,14 @@ export function KeyBackup({ role, accountId }: { role: Role; accountId: string }
       setError("That is the account this browser already has.");
       return;
     }
+    // Restoring replaces the only copy of the current key, so it must be saved first.
+    if (!backedUp) {
+      setError("Back up this browser's account first: reveal its phrase above and confirm you saved it.");
+      return;
+    }
     const replace = window.confirm(
       `Replace this browser's account (${shortId(accountId)}) with ${shortId(restoredId)}? ` +
-        "If the current account holds money, back it up first.",
+        "Keep the current account's recovery phrase: it is the only way back to it.",
     );
     if (!replace) return;
     restoreKey(role, input);
