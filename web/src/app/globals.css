@@ -26,10 +26,31 @@
   --ff-sans: "Geist Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --ff-mono: "Geist Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
   --ff-display: "Instrument Serif", "Iowan Old Style", Georgia, serif;
+  color-scheme: light;
+}
+
+/* Dark follows the system unless the visitor picked a theme (data-theme, set before first paint). */
+:root[data-theme="dark"] {
+  --bg: #0a100e;
+  --surface: #111917;
+  --surface-2: #18231f;
+  --border: #24312c;
+  --text: #e9efe9;
+  --muted: #8fa097;
+  --accent: #5ee0a0;
+  --accent-ink: #062016;
+  --accent-soft: #12281f;
+  --danger: #ff8f80;
+  --danger-soft: #3a1a16;
+  --warn-soft: #2f2710;
+  --hero: #15342a;
+  --hero-ink: #eef4ee;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 16px 40px -12px rgb(0 0 0 / 0.6);
+  color-scheme: dark;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #0a100e;
     --surface: #111917;
     --surface-2: #18231f;
@@ -45,6 +66,7 @@
     --hero: #15342a;
     --hero-ink: #eef4ee;
     --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 16px 40px -12px rgb(0 0 0 / 0.6);
+    color-scheme: dark;
   }
 }
 

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { config } from "@/lib/config";
 import { Logo } from "./icons";
+import { ThemeToggle } from "./ThemeToggle";
 import { LiveDot } from "./ui";
 
 const LINKS = [
@@ -38,6 +39,9 @@ export function SiteHeader() {
         <span className="ml-auto hidden items-center gap-2 rounded-full border border-border px-3 py-1 text-xs text-muted sm:inline-flex">
           <LiveDot />
           NEAR {config.networkId}
+        </span>
+        <span className="ml-auto sm:ml-1">
+          <ThemeToggle />
         </span>
       </nav>
     </header>

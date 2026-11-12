@@ -78,6 +78,26 @@ export const AlertIcon = (p: IconProps) => (
 );
 
 /** The Payday mark: a hub with a live core, echoing the centre of the flow animation. */
+export const SunIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="8" cy="8" r="2.8" />
+    <path d="M8 1.5v1.3M8 13.2v1.3M1.5 8h1.3M13.2 8h1.3M3.4 3.4l.9.9M11.7 11.7l.9.9M3.4 12.6l.9-.9M11.7 4.3l.9-.9" />
+  </Icon>
+);
+
+export const MoonIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M13.5 9.6A5.6 5.6 0 0 1 6.4 2.5a5.6 5.6 0 1 0 7.1 7.1z" />
+  </Icon>
+);
+
+export const MonitorIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="1.8" y="2.5" width="12.4" height="8.5" rx="1.5" />
+    <path d="M5.5 13.8h5M8 11v2.8" />
+  </Icon>
+);
+
 export function Logo({ className = "" }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} aria-hidden="true">

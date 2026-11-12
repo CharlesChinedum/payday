@@ -315,7 +315,7 @@ Any RPC error is read as "account does not exist", so during an RPC outage or ra
 - **Access control.** `withdraw` is worker-only, `cancel` employer-or-worker; `predecessor_account_id` is the real sender under NEP-366. No method is payable.
 - **Relay allowlist mechanics.** Exact receiver match, own-property method lookup, exactly one function-call action, exact gas, exact deposits, mint on testnet only and only to self. Policy inspects the same decoded object that is submitted, and a test proves re-encoding is byte-identical.
 - **Secrets.** `.env.local` is ignored and untracked; no key-like string in git history or the client bundle; the relayer module is server-only.
-- **Client.** No `dangerouslySetInnerHTML`, `eval` or `innerHTML`; amounts are bigint throughout; the accountant CSV is quoted correctly.
+- **Client.** No `eval` or `innerHTML`, and `dangerouslySetInnerHTML` only for a constant theme script (added after the review); amounts are bigint throughout; the accountant CSV is quoted correctly.
 
 ## Before mainnet, in order
 
