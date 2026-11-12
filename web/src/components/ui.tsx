@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from "react";
+import { shortId } from "@/lib/address";
 import { accountUrl, txUrl } from "@/lib/config";
 import { ArrowUpRightIcon, CheckIcon, CopyIcon } from "./icons";
 
@@ -91,9 +92,7 @@ export function Skeleton({ className = "" }: { className?: string }) {
   return <div className={`skeleton ${className}`} aria-hidden="true" />;
 }
 
-export function shortId(id: string): string {
-  return id.length > 24 ? `${id.slice(0, 8)}…${id.slice(-6)}` : id;
-}
+export { shortId };
 
 const COPIED_MS = 1600;
 

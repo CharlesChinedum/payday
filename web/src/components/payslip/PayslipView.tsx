@@ -1,6 +1,7 @@
 "use client";
 
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import Image from "next/image";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { isNearAccountId } from "@/lib/address";
 import { accountUrl, config } from "@/lib/config";
@@ -8,7 +9,7 @@ import type { StreamRecord } from "@/lib/csv";
 import { formatUsdc } from "@/lib/money";
 import { useNow } from "@/lib/hooks";
 import { getStreams, view } from "@/lib/near";
-import { monthOf, monthPeriod, payslipLines, recentMonths } from "@/lib/payslip";
+import { HIDE_AMOUNT, monthOf, monthPeriod, payslipCardPath, payslipLines, payslipPath, recentMonths, shareText, type Period } from "@/lib/payslip";
 import { formatLocal, toLocal } from "@/lib/rates";
 import { CurrencyPicker, RateNote, useCurrency, useRates } from "../LocalCurrency";
 import { Button, CopyButton, ExplorerLink, Notice, Skeleton, shortId } from "../ui";
@@ -79,11 +80,11 @@ function PaperLocal({ units }: { units: bigint }) {
 export function PayslipView() {
   const params = useSearchParams();
   const router = useRouter();
-  const pathname = usePathname();
   const worker = params.get("worker")?.trim().toLowerCase() ?? "";
   const nowSecs = Math.floor(useNow(60_000) / 1000);
   const month = params.get("month") ?? monthOf(nowSecs);
   const period = monthPeriod(month, nowSecs);
+  const hideAmount = params.get("amount") === HIDE_AMOUNT;
 
   if (!isNearAccountId(worker)) {
     return <Notice tone="error">This payslip link has no valid worker account. Open payslips from the My pay page.</Notice>;
@@ -96,21 +97,23 @@ export function PayslipView() {
       worker={worker}
       period={period}
       nowSecs={nowSecs}
-      onMonth={(m) => router.replace(`${pathname}?worker=${encodeURIComponent(worker)}&month=${m}`)}
+      hideAmount={hideAmount}
+      onMonth={(m) => router.replace(payslipPath(worker, m, hideAmount))}
+      onHideAmount={(hide) => router.replace(payslipPath(worker, month, hide), { scroll: false })}
     />
   );
 }
 
 function Payslip(props: {
   worker: string;
-  period: NonNullable<ReturnType<typeof monthPeriod>>;
+  period: Period;
   nowSecs: number;
+  hideAmount: boolean;
   onMonth: (m: string) => void;
+  onHideAmount: (hide: boolean) => void;
 }) {
   const { worker, period, nowSecs, onMonth } = props;
   const state = useWorkerStreams(worker);
-  // Keyed by worker and month, so this remounts (and re-reads the URL) whenever the link changes.
-  const link = useSyncExternalStore(noop, () => window.location.href, () => "");
 
   if (state.status === "loading") {
     return (
@@ -150,7 +153,6 @@ function Payslip(props: {
         </label>
         <CurrencyPicker className="text-muted" />
         <span className="flex-1" />
-        {link && <CopyButton value={link} label="Copy link" />}
         <Button variant="secondary" onClick={() => window.print()}>
           Print or save as PDF
         </Button>
@@ -247,13 +249,70 @@ function Payslip(props: {
         </section>
       </article>
 
-      <div className="print:hidden">
-        <RateNote className="text-muted" />
-        <p className="mt-2 text-xs text-muted">
-          Anyone with this link can see these figures, as anyone can on the public chain. Share it with a landlord, bank
-          or visa office instead of a screenshot.
-        </p>
-      </div>
+      <SharePanel worker={worker} period={period} hideAmount={props.hideAmount} onHideAmount={props.onHideAmount} />
+      <RateNote className="text-muted print:hidden" />
     </div>
+  );
+}
+
+const SHARE_LINK =
+  "inline-flex items-center gap-1.5 rounded-lg border border-border px-2 py-1 text-xs font-medium text-muted transition duration-150 hover:text-text active:scale-95";
+
+/**
+ * Sharing: the link unfurls into a card drawn from the chain on X, WhatsApp and Telegram.
+ * The card can leave the amount out; the payslip itself always shows it.
+ */
+function SharePanel(props: { worker: string; period: Period; hideAmount: boolean; onHideAmount: (hide: boolean) => void }) {
+  const { worker, period, hideAmount, onHideAmount } = props;
+  const origin = useSyncExternalStore(noop, () => window.location.origin, () => "");
+  const link = `${origin}${payslipPath(worker, period.month, hideAmount)}`;
+  const text = shareText(period);
+  const q = encodeURIComponent;
+  return (
+    <section className="rounded-2xl border border-border p-4 sm:p-5 print:hidden">
+      <h2 className="text-sm font-medium">Share this payslip</h2>
+      <p className="mt-1 text-xs text-muted">
+        Anyone with the link sees these figures, as anyone can on the public chain. Send it to a landlord, bank or visa
+        office instead of a screenshot. In chats and posts it shows as this card.
+      </p>
+      <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-start">
+        <Image
+          src={payslipCardPath(worker, period.month, hideAmount)}
+          alt={`Link preview for the ${period.label} payslip`}
+          width={1200}
+          height={630}
+          unoptimized
+          className="w-full rounded-lg border border-border sm:w-72"
+        />
+        <div className="space-y-3">
+          <label className="flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="mt-0.5 accent-[var(--accent)]"
+              checked={hideAmount}
+              onChange={(e) => onHideAmount(e.target.checked)}
+            />
+            <span>
+              Leave the amount out of the preview
+              <span className="block text-xs text-muted">People who open the link still see the full payslip.</span>
+            </span>
+          </label>
+          {origin && (
+            <div className="flex flex-wrap gap-2">
+              <CopyButton value={link} label="Copy link" />
+              <a className={SHARE_LINK} target="_blank" rel="noopener noreferrer" href={`https://x.com/intent/post?text=${q(text)}&url=${q(link)}`}>
+                Post on X
+              </a>
+              <a className={SHARE_LINK} target="_blank" rel="noopener noreferrer" href={`https://wa.me/?text=${q(`${text} ${link}`)}`}>
+                WhatsApp
+              </a>
+              <a className={SHARE_LINK} target="_blank" rel="noopener noreferrer" href={`https://t.me/share/url?url=${q(link)}&text=${q(text)}`}>
+                Telegram
+              </a>
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
   );
 }

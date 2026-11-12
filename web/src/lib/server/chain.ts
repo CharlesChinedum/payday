@@ -113,15 +113,25 @@ export const isRegistered = async (accountId: string) =>
  * its streams have vested, and what it is owed.
  */
 export async function spendableOf(accountId: string): Promise<bigint> {
-  const [balance, owed, count] = await Promise.all([usdcBalanceOf(accountId), owedOf(accountId), streamCountOf(accountId)]);
-  let vested = 0n;
-  for (let from = 0; from < Math.min(count, 500); from += 100) {
-    const page = await viewFunction<StreamOnChain[]>(config.payday, "streams_of", {
-      account_id: accountId,
-      from_index: from,
-      limit: 100,
-    });
-    for (const s of page) if (s.worker === accountId) vested += BigInt(s.withdrawable);
-  }
+  const [balance, owed, streams] = await Promise.all([usdcBalanceOf(accountId), owedOf(accountId), streamsOf(accountId)]);
+  const vested = streams.reduce((sum, s) => (s.worker === accountId ? sum + BigInt(s.withdrawable) : sum), 0n);
   return balance + owed + vested;
+}
+
+const STREAM_PAGE = 100;
+const MAX_STREAMS = 500;
+
+/** Every stream the account pays or is paid by, up to the first 500. */
+export async function streamsOf(accountId: string): Promise<StreamOnChain[]> {
+  const count = Math.min(await streamCountOf(accountId), MAX_STREAMS);
+  const pages = await Promise.all(
+    Array.from({ length: Math.ceil(count / STREAM_PAGE) }, (_, i) =>
+      viewFunction<StreamOnChain[]>(config.payday, "streams_of", {
+        account_id: accountId,
+        from_index: i * STREAM_PAGE,
+        limit: STREAM_PAGE,
+      }),
+    ),
+  );
+  return pages.flat();
 }

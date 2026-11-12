@@ -21,7 +21,7 @@ Workers also wait a whole month to be paid for work they did on day one.
 5. **The employer can stop a stream.** Cancelling refunds everything not yet earned; the worker keeps everything they already earned.
 6. **Money can always leave.** Anyone can send what their Payday account holds to any NEAR account or another chain, and claim anything Payday is holding for them.
 7. **The accountant gets a CSV.** Every stream with paid out, earned and not yet earned, in UTC.
-8. **Workers get payslips.** A monthly statement for a landlord, bank or visa office, read live from the contract every time its link is opened, so whoever receives it can check it themselves. Print or save it as PDF.
+8. **Workers get payslips.** A monthly statement for a landlord, bank or visa office, read live from the contract every time its link is opened, so whoever receives it can check it themselves. Print or save it as PDF, or share the link: on X, WhatsApp and Telegram it unfurls into a card with the month and amount, drawn from the chain too (the amount can be left off the card).
 9. **Amounts in local currency.** Balances and payslips show an approximate local value (naira, shilling, cedi, rupee, peso and more) next to USDC, at a daily mid-market rate.
 10. **DAOs can run payroll too.** A Sputnik DAO pays its contributors the same way: Payday drafts one proposal, the council votes, and the vote that passes it funds every stream, with the DAO as the employer.
 
@@ -82,7 +82,7 @@ Open https://payday-near-eight.vercel.app.
 2. Go to **Run payroll**, click **Get 5,000 test USDC**, then **Add my worker account** and **Fund payroll**. The toast says "Funded 1 worker".
 3. Back on **My pay**, the balance ticks up. Click **Withdraw** (from 1 USDC): Payday keeps a 0.01 USDC payout fee, plus 0.01 USDC the first time to set up your account, and you pay no gas.
 4. Under **Back up this account**, reveal and save your recovery phrase.
-5. Under **Payslips**, pick a month and click **Open payslip**: a printable statement of what you earned, by employer and stream, with the contract call that proves each line. Use **Show in** to see amounts in your local currency.
+5. Under **Payslips**, pick a month and click **Open payslip**: a printable statement of what you earned, by employer and stream, with the contract call that proves each line. Use **Show in** to see amounts in your local currency. Under **Share this payslip**, the card shown is what the link looks like when posted; tick **Leave the amount out of the preview** to share it without the figure, then **Post on X**, **WhatsApp** or **Telegram**.
 
 To check a deployment without clicking, run the smoke test. It plays both roles with fresh keys, then replays the attacks from the security review and checks each is refused:
 
@@ -116,7 +116,7 @@ You should see `64 passed` (unit), `9 passed` (integration) and `7 passed` (secu
 cd web && pnpm test
 ```
 
-You should see `73 passed`: the relayer policy and pre-flight, payslip periods and earnings (split across months by the contract's vesting rule), exchange-rate validation, IPv6 rate-limit keys, DAO proposals (built, read back from their arguments, and safely quoted in CLI commands), signature verification (including the audit's forged delegate), delegate decoding, reading results from events, address checksums, recovery phrases, amount and date parsing, vesting maths and the CSVs.
+You should see `76 passed`: the relayer policy and pre-flight, payslip periods and earnings (split across months by the contract's vesting rule) and their share cards, exchange-rate validation, IPv6 rate-limit keys, DAO proposals (built, read back from their arguments, and safely quoted in CLI commands), signature verification (including the audit's forged delegate), delegate decoding, reading results from events, address checksums, recovery phrases, amount and date parsing, vesting maths and the CSVs.
 
 ### 2. Run everything locally
 
@@ -171,7 +171,7 @@ ROOT=<your-account>.testnet scripts/testnet.sh upgrade   # later, through the co
 3. **Pre-flight.** Against chain state: the key exists, the nonce is fresh and in range, the delegate is neither expired nor valid for more than about ten minutes, and the call will succeed and is worth paying for (the stream exists, is live and the sender may act on it; withdrawals are at least 1 USDC or empty the stream; every payout covers its fees; nobody sends to themselves or to Payday or the token; new streams are within the contract's bounds; the balance covers the transfer).
 4. **Budget.** Per-IP limits (IPv6 by /64), per-sender limits with one request in flight at a time, and a relayer balance floor read from the chain that stops all spending below 0.5 NEAR.
 
-`GET /api/rates` serves USD exchange rates for the offered currencies from [ExchangeRate-API](https://www.exchangerate-api.com)'s open endpoint, fetched at most every six hours, validated, and cached at the edge, so browsers never contact a third party. `POST /api/onboard` creates a browser key's account (1 yoctoNEAR) only if it holds USDC, has a stream or is owed money. `POST /api/faucet` mints test USDC on test networks. `POST /api/quote` validates the destination address per chain, requires a Payday refund account that can afford the amount (and, on mainnet, can receive a refund), and checks that 1Click's answer is for exactly what was asked and plausible.
+`GET /api/og/payslip` draws a payslip link's preview card (1200×630 PNG) from the contract, cached at the edge for ten minutes for the current month and a day for past ones; a bad link gets the plain Payday card. `GET /api/rates` serves USD exchange rates for the offered currencies from [ExchangeRate-API](https://www.exchangerate-api.com)'s open endpoint, fetched at most every six hours, validated, and cached at the edge, so browsers never contact a third party. `POST /api/onboard` creates a browser key's account (1 yoctoNEAR) only if it holds USDC, has a stream or is owed money. `POST /api/faucet` mints test USDC on test networks. `POST /api/quote` validates the destination address per chain, requires a Payday refund account that can afford the amount (and, on mainnet, can receive a refund), and checks that 1Click's answer is for exactly what was asked and plausible.
 
 All API routes accept only same-origin `application/json` requests with small bodies, and answer errors generically with a reference id.
 

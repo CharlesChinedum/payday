@@ -6,7 +6,7 @@ import { GAS_TGAS, config } from "@/lib/config";
 import type { StreamRecord } from "@/lib/csv";
 import { useLedger, useLog, useNow, useRoleAccount } from "@/lib/hooks";
 import { formatUsdc } from "@/lib/money";
-import { monthOf, monthPeriod, recentMonths } from "@/lib/payslip";
+import { monthOf, monthPeriod, payslipPath, recentMonths } from "@/lib/payslip";
 import { explain, isRegisteredForUsdc, paidOut, relayCall } from "@/lib/near";
 import { report } from "@/lib/report";
 import { WaitingAnimation } from "../animations";
@@ -180,7 +180,7 @@ function Payslips({ accountId, streams, now }: { accountId: string; streams: Str
   const months = recentMonths(nowSecs, Math.min(...streams.map((s) => s.start)));
   const [month, setMonth] = useState<string | null>(null);
   const chosen = month ?? monthOf(nowSecs);
-  const href = `/payslip?worker=${encodeURIComponent(accountId)}&month=${chosen}`;
+  const href = payslipPath(accountId, chosen);
   return (
     <Card title="Payslips">
       <p className="text-sm text-muted">

@@ -1,5 +1,5 @@
 import type { StreamRecord } from "./csv";
-import { vestedAt } from "./money";
+import { formatUsdc, vestedAt } from "./money";
 
 /** A calendar month in UTC, cut off at `now` while it is still running. */
 export interface Period {
@@ -74,3 +74,39 @@ export function payslipLines(streams: StreamRecord[], worker: string, period: Pe
     .filter((line) => line.earned > 0n)
     .sort((a, b) => a.stream.id - b.stream.id);
 }
+
+/** Query value that keeps the amount out of the link preview. */
+export const HIDE_AMOUNT = "hide";
+
+/** The payslip's own link; `hideAmount` only changes the preview card, not the page. */
+export function payslipPath(worker: string, month: string, hideAmount = false): string {
+  const query = new URLSearchParams({ worker, month });
+  if (hideAmount) query.set("amount", HIDE_AMOUNT);
+  return `/payslip?${query}`;
+}
+
+/** The same query, for the preview image. */
+export const payslipCardPath = (worker: string, month: string, hideAmount = false) =>
+  payslipPath(worker, month, hideAmount).replace("/payslip?", "/api/og/payslip?");
+
+export interface ShareCard {
+  title: string;
+  /** "1,010.99 USDC", or null when the amount is hidden or nothing was earned. */
+  amount: string | null;
+  caption: string;
+}
+
+/** What a shared payslip link shows in its preview. */
+export function shareCard(lines: PayslipLine[], period: Period, hideAmount: boolean): ShareCard {
+  const title = period.toDate ? `${period.label}, so far` : period.label;
+  if (lines.length === 0) return { title, amount: null, caption: "No Payday salary earned in this month" };
+  const employers = new Set(lines.map((l) => l.stream.employer)).size;
+  const from = employers === 1 ? "one employer" : `${employers} employers`;
+  if (hideAmount) return { title, amount: null, caption: `Paid by the second from ${from}` };
+  const earned = lines.reduce((sum, l) => sum + l.earned, 0n);
+  return { title, amount: `${formatUsdc(earned)} USDC`, caption: `Earned${period.toDate ? " so far" : ""} from ${from}, paid by the second` };
+}
+
+/** The text that goes with the link when it is posted. */
+export const shareText = (period: Period) =>
+  `My Payday payslip for ${period.label}: salary streamed by the second, every figure verifiable on NEAR.`;

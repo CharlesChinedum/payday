@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { StreamRecord } from "./csv";
-import { monthPeriod, payslipLines, recentMonths } from "./payslip";
+import { monthPeriod, payslipCardPath, payslipLines, payslipPath, recentMonths, shareCard } from "./payslip";
 import { CURRENCIES, formatLocal, guessCurrency, parseRates, toLocal } from "./rates";
 
 const NOV_1 = Date.UTC(2026, 10, 1) / 1000;
@@ -54,6 +54,34 @@ describe("payslip lines", () => {
     expect(nov[0].earned).toBe(1_500_000_000n);
     expect(payslipLines([stream({ worker: "bo.testnet" })], "ada.testnet", monthPeriod("2026-11", NOV_12)!)).toEqual([]);
     expect(payslipLines([stream({ start: DEC_1, stop: DEC_1 + 86_400 })], "ada.testnet", monthPeriod("2026-11", NOV_12)!)).toEqual([]);
+  });
+});
+
+describe("payslip sharing", () => {
+  const nov = monthPeriod("2026-11", NOV_12)!;
+  const oct = monthPeriod("2026-10", NOV_12)!;
+  const two = [stream({}), stream({ id: 2, employer: "dao.sputnik-dao.testnet", deposit: "600000000" })];
+
+  it("build the page and card links, hiding the amount only on request", () => {
+    expect(payslipPath("ada.testnet", "2026-11")).toBe("/payslip?worker=ada.testnet&month=2026-11");
+    expect(payslipPath("ada.testnet", "2026-11", true)).toBe("/payslip?worker=ada.testnet&month=2026-11&amount=hide");
+    expect(payslipCardPath("ada.testnet", "2026-11", true)).toBe("/api/og/payslip?worker=ada.testnet&month=2026-11&amount=hide");
+  });
+
+  it("put the month's total and the number of employers on the card", () => {
+    // 1,100 + 220 USDC to 12 Nov.
+    const card = shareCard(payslipLines(two, "ada.testnet", nov), nov, false);
+    expect(card).toEqual({ title: "November 2026, so far", amount: "1,320.00 USDC", caption: "Earned so far from 2 employers, paid by the second" });
+  });
+
+  it("leave the amount out when asked, and say so when nothing was earned", () => {
+    expect(shareCard(payslipLines(two, "ada.testnet", nov), nov, true)).toEqual({
+      title: "November 2026, so far",
+      amount: null,
+      caption: "Paid by the second from 2 employers",
+    });
+    expect(shareCard([], oct, false)).toEqual({ title: "October 2026", amount: null, caption: "No Payday salary earned in this month" });
+    expect(shareCard(payslipLines([stream({})], "ada.testnet", nov), nov, false).caption).toContain("one employer");
   });
 });
 

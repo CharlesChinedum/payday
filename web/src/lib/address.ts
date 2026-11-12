@@ -22,6 +22,11 @@ export function isNearAccountId(value: string): boolean {
   return value.length >= 2 && value.length <= 64 && NEAR_ACCOUNT.test(value);
 }
 
+/** Long ids (implicit accounts) as "1a2b3c4d…9e8f7a"; named accounts unchanged. */
+export function shortId(id: string): string {
+  return id.length > 24 ? `${id.slice(0, 8)}…${id.slice(-6)}` : id;
+}
+
 /** Validates a destination address for its chain, including checksums where they exist. */
 export function checkAddress(kind: CashOutAsset["kind"], input: string): AddressCheck {
   const address = input.trim();

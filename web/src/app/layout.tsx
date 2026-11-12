@@ -8,7 +8,13 @@ import { SiteHeader } from "@/components/SiteHeader";
 import { THEME_SCRIPT } from "@/lib/theme";
 import "./globals.css";
 
+/** Absolute base for link previews: the production domain on Vercel, this machine locally. */
+const SITE_URL =
+  process.env.NEXT_PUBLIC_SITE_URL ??
+  (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "http://localhost:3000");
+
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: "Payday — payroll that pays every second",
   description: "USDC payroll that streams every second. No gas for workers, cash out to any chain.",
 };
