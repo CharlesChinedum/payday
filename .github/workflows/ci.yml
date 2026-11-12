@@ -21,8 +21,23 @@ jobs:
         with:
           components: clippy, rustfmt
       - run: cargo fmt --check
-      - run: cargo clippy --tests -- -D warnings
+      - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test --lib
+
+  sandbox:
+    name: Contract (sandbox integration and security tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Install cargo-near 0.23.0
+        run: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/near/cargo-near/releases/download/cargo-near-v0.23.0/cargo-near-installer.sh | sh
+      - run: scripts/build.sh
+      - name: Integration and security tests against a local NEAR sandbox
+        working-directory: contract
+        run: cargo test --tests -- --test-threads=2
 
   web:
     name: Web (lint, tests, build, audit)

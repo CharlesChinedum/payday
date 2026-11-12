@@ -37,23 +37,24 @@ Workers also wait a whole month to be paid for work they did on day one.
 | Fee | When | Default |
 |---|---|---|
 | Stream fee | Per stream, paid by the employer on top of the stream amounts | 0.01 USDC |
+| Payout fee | Deducted from every withdrawal, claim and send (not from a cancel refund) | 0.01 USDC |
 | Registration fee | Deducted from a payout to an account that has never held USDC (a worker's first withdrawal, a fresh 1Click deposit address) | 0.01 USDC |
 
-Fees pay for what Payday's account spends on-chain: storage for streams and USDC registrations. The owner can change them, up to a hard cap of 1 USDC each.
+Fees pay for what Payday spends on its users' behalf: storage for streams, USDC registrations, and the gas the relayer pays for every gas-free payout. Because each payout pays its own way, nobody can drain the relayer by repeating tiny ones. The owner can change the fees within 0.001 to 1 USDC each, and fees are booked only once the payout they belong to has succeeded.
 
 ## Status
 
 | Part | Status |
 |---|---|
-| Streaming contract 2.0.0 (Rust, `contract/`) | **Done** — 54 unit tests, 9 sandbox integration tests, 6 sandbox security regressions |
+| Streaming contract 2.0.0 (Rust, `contract/`) | **Done** — 64 unit tests, 9 sandbox integration tests, 7 sandbox security tests |
 | Mock USDC for testnet (`mock-usdc/`) | **Done** — standard NEP-141, public `mint` (test networks only) |
 | Gasless relayer (`web/src/app/api/relay`) | **Done** — signature-verified, pre-flighted against chain state |
 | Web app (`web/`) | **Done** — landing page, employer and worker dashboards, backup and restore, move money out |
 | 1Click cash-out | **Quotes done** — live mainnet quotes on testnet; real swaps need the mainnet deploy |
 | CSV export | **Done** — per-stream accountant export |
-| Security review | **Done** — see [AUDIT.md](AUDIT.md); fixes in contract 2.0.0 and the current web app |
+| Security review | **Done, two rounds** — see [AUDIT.md](AUDIT.md); fixes in contract 2.0.0 and the current web app |
 | Hosted demo | **Done** — https://payday-near-eight.vercel.app (testnet), redeployed from `main` on every push |
-| Mainnet deployment | Not started; waiting on a re-review of the fixes |
+| Mainnet deployment | Not started; the items AUDIT.md lists as open before mainnet come first |
 
 ## Live on testnet
 
@@ -74,7 +75,7 @@ Open https://payday-near-eight.vercel.app.
 
 1. Go to **My pay** and copy your account id.
 2. Go to **Run payroll**, click **Get 5,000 test USDC**, then **Add my worker account** and **Fund payroll**. The toast says "Funded 1 worker".
-3. Back on **My pay**, the balance ticks up. Click **Withdraw**: the first withdrawal sets up your account (0.01 USDC), and you pay no gas.
+3. Back on **My pay**, the balance ticks up. Click **Withdraw** (from 1 USDC): Payday keeps a 0.01 USDC payout fee, plus 0.01 USDC the first time to set up your account, and you pay no gas.
 4. Under **Back up this account**, reveal and save your recovery phrase.
 
 To check a deployment without clicking, run the smoke test. It plays both roles with fresh keys, then replays the attacks from the security review and checks each is refused:
@@ -83,7 +84,7 @@ To check a deployment without clicking, run the smoke test. It plays both roles 
 cd web && pnpm install && pnpm smoke https://payday-near-eight.vercel.app
 ```
 
-You should see ✓ lines for the faucet, both accounts, funding, a withdrawal, a send, and seven refused attacks, then `PASS`.
+You should see ✓ lines for the faucet, both accounts, funding, a withdrawal, a send, and eleven refused attacks, then `PASS`.
 
 ### 1. Run the tests
 
@@ -94,13 +95,13 @@ scripts/build.sh
 cd contract && cargo test
 ```
 
-You should see `54 passed` (unit), `9 passed` (integration) and `6 passed` (security). The sandbox tests deploy both contracts to a local NEAR node and check, with real cross-contract calls: funding with fees, payouts that register new receivers and charge the fee only then, failed payouts restored to their stream, cancels that split funds exactly, sending USDC out through Payday, the owner upgrading the contract through itself, and that the attacks from [AUDIT.md](AUDIT.md) no longer work.
+You should see `64 passed` (unit), `9 passed` (integration) and `7 passed` (security). The sandbox tests deploy both contracts to a local NEAR node and check, with real cross-contract calls: funding with fees, payouts that carry the payout fee and register new receivers (charging registration only then), failed payouts restored to their stream with no fee kept, that the contract's USDC balance always equals what it owes, cancels that split funds exactly, sending USDC out through Payday, the owner upgrading the contract through itself, and that the attacks from [AUDIT.md](AUDIT.md) no longer work.
 
 ```bash
 cd web && pnpm test
 ```
 
-You should see `40 passed`: the relayer policy, signature verification (including the audit's forged delegate), delegate decoding, reading results from events, address checksums, recovery phrases, amount and date parsing, vesting maths and the CSVs.
+You should see `55 passed`: the relayer policy and pre-flight, IPv6 rate-limit keys, signature verification (including the audit's forged delegate), delegate decoding, reading results from events, address checksums, recovery phrases, amount and date parsing, vesting maths and the CSVs.
 
 ### 2. Run everything locally
 
@@ -144,7 +145,7 @@ ROOT=<your-account>.testnet scripts/testnet.sh upgrade   # later, through the co
 
 1. **Policy.** Exactly one function call from this table, with strictly shaped arguments:
 
-   | Receiver | Method | Max gas | Deposit | Rule |
+   | Receiver | Method | Gas (exact) | Deposit | Rule |
    |---|---|---|---|---|
    | Payday | `withdraw` | 100 Tgas | 0 | |
    | Payday | `claim_owed` | 100 Tgas | 0 | |
@@ -152,10 +153,10 @@ ROOT=<your-account>.testnet scripts/testnet.sh upgrade   # later, through the co
    | USDC | `ft_transfer_call` | 150 Tgas | 1 yoctoNEAR | to Payday, with `{"streams": [...]}` or `{"send_to": "..."}` |
 
 2. **Signature.** The sender must be the implicit account of the signing ed25519 key, and the signature must cover this exact delegate.
-3. **Pre-flight.** Against chain state: the key exists, the nonce is fresh, the delegate is neither expired nor valid for more than about ten minutes, and the call will succeed (the stream exists and the sender may act on it, there is something to withdraw or claim, the balance covers the transfer, the amounts include the fees).
-4. **Budget.** Per-IP and per-sender limits, and a relayer balance floor read from the chain that stops all spending below 0.5 NEAR.
+3. **Pre-flight.** Against chain state: the key exists, the nonce is fresh and in range, the delegate is neither expired nor valid for more than about ten minutes, and the call will succeed and is worth paying for (the stream exists, is live and the sender may act on it; withdrawals are at least 1 USDC or empty the stream; every payout covers its fees; nobody sends to themselves or to Payday or the token; new streams are within the contract's bounds; the balance covers the transfer).
+4. **Budget.** Per-IP limits (IPv6 by /64), per-sender limits with one request in flight at a time, and a relayer balance floor read from the chain that stops all spending below 0.5 NEAR.
 
-`POST /api/onboard` creates a browser key's account (1 yoctoNEAR) only if it holds USDC, has a stream or is owed money. `POST /api/faucet` mints test USDC on test networks. `POST /api/quote` validates the destination address per chain, requires a Payday refund account that can afford the amount, and checks that 1Click's answer is for exactly what was asked.
+`POST /api/onboard` creates a browser key's account (1 yoctoNEAR) only if it holds USDC, has a stream or is owed money. `POST /api/faucet` mints test USDC on test networks. `POST /api/quote` validates the destination address per chain, requires a Payday refund account that can afford the amount (and, on mainnet, can receive a refund), and checks that 1Click's answer is for exactly what was asked and plausible.
 
 All API routes accept only same-origin `application/json` requests with small bodies, and answer errors generically with a reference id.
 
@@ -169,12 +170,12 @@ A stream records: employer, worker, deposit, amount withdrawn, start and stop ti
 
 - **Earned** = `deposit × (now − start) / (stop − start)`, rounded down, capped at `deposit` after `stop`. **Withdrawable** = earned − withdrawn.
 - **Funding**: `ft_transfer_call` on USDC with `msg` `{"streams": [...]}` (up to 25). The amount sent must equal the stream amounts plus the stream fees, or the whole transfer is refunded. Only the configured USDC contract is accepted. Starts must be within a year of now and streams at most five years long.
-- **Payouts** (withdraw, claim, cancel refunds, sends) all go the same way: ask USDC whether the receiver is registered; if not, register it and deduct the registration fee; transfer; then settle in a callback. A payout that fails is put back where it came from (the stream, or the account's `owed` balance) and its fee refunded.
-- **Withdraw**: `withdraw(stream_id, amount?, receiver?)`. Payouts to another account must be at least 1 USDC. Attach 100 Tgas.
+- **Payouts** (withdraw, claim, cancel refunds, sends) all go the same way: ask USDC whether the receiver is registered; if not, register it and add the registration fee; transfer the amount less the fees; then settle in a callback, which books the fees only on success. A payout that fails is put back in full where it came from (the stream, or the account's `owed` balance).
+- **Withdraw**: `withdraw(stream_id, amount?, receiver?)`. At least 1 USDC, or everything left in the stream, and more than the fees. Attach 100 Tgas.
 - **Cancel**: employer or worker. The employer is refunded the unearned part. The worker's earned part stays in the stream, or, below 1 USDC, moves to their `owed` balance so the stream can be deleted.
 - **Send**: `ft_transfer_call` to Payday with `msg` `{"send_to": "account"}` passes USDC on, registering the receiver if needed. This is how browser accounts move money out.
 - **Storage**: streams are deleted once fully paid out; `prune(stream_ids)` lets anyone delete settled ones; `streams_of(account, from_index, limit)` pages. Funding is refused, and registrations are skipped, if they would eat into a NEAR reserve kept for callbacks.
-- **Owner**: sets fees (capped), pauses new funding, withdraws collected fees, and upgrades the contract through `upgrade` (new code, then `migrate`), so the contract account can drop its own keys. Ownership moves in two steps.
+- **Owner**: sets fees (0.001 to 1 USDC each), pauses new funding, withdraws collected fees, and upgrades the contract through `upgrade` (new code, then `migrate`), so the contract account can drop its own keys. Ownership moves in two steps.
 
 ## Prior work and what is new
 
