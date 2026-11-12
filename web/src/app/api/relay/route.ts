@@ -1,7 +1,8 @@
 import { config } from "@/lib/config";
 import { decodeSignedDelegate, summarizeDelegate, verifyDelegateSignature } from "@/lib/delegate";
 import { summarizeOutcome, type TxOutcome } from "@/lib/outcome";
-import { checkDelegate } from "@/lib/policy";
+import { checkDelegate, type DelegateSummary, type SponsoredCall } from "@/lib/policy";
+import type { SignedDelegate } from "near-api-js";
 import { HttpError, clientIp, handle, readJson, withTimeout } from "@/lib/server/http";
 import { rateLimiter } from "@/lib/server/limits";
 import { preflight } from "@/lib/server/preflight";
@@ -14,6 +15,12 @@ const RELAY_TIMEOUT_MS = 40_000;
 const perIp = rateLimiter("relay", 30, 60_000);
 const perSender = rateLimiter("relay", 20, 60_000);
 const emitters = { payday: config.payday, nep141: config.usdc };
+/**
+ * Senders with a delegate being relayed by this instance. Two parallel copies of one
+ * request would both pass the pre-flight, and the second would fail on-chain at the
+ * relayer's cost, so each sender gets one at a time.
+ */
+const inFlight = new Set<string>();
 
 /**
  * Submits a user's signed delegate action and pays its gas, but only after proving it is
@@ -41,21 +48,32 @@ export function POST(req: Request) {
 
     // Counted only now, so nobody can use up another account's allowance.
     perSender(summary.senderId);
-    await preflight(summary, verdict.call);
-
-    const outcome = await spend((relayer) =>
-      withTimeout<TxOutcome | null>(
-        relayer.relayMetaTransaction(signed).then((res) => summarizeOutcome(res as Parameters<typeof summarizeOutcome>[0], emitters)),
-        RELAY_TIMEOUT_MS,
-        () => null,
-      ).catch((e: unknown) => {
-        // Sent but not confirmed, or failed in a way we cannot classify: the caller must
-        // re-read chain state rather than retry blindly.
-        console.error("[relay] outcome unknown", e);
-        return null;
-      }),
-    );
-    if (!outcome) return Response.json({ status: "unknown" }, { status: 202 });
-    return Response.json(outcome);
+    if (inFlight.has(summary.senderId)) throw new HttpError(409, "Your previous request is still being sent; wait a moment");
+    inFlight.add(summary.senderId);
+    try {
+      return await relay(summary, verdict.call, signed);
+    } finally {
+      inFlight.delete(summary.senderId);
+    }
   });
+}
+
+/** Pre-flights the delegate, then submits it and pays for it. */
+async function relay(summary: DelegateSummary, call: SponsoredCall, signed: SignedDelegate): Promise<Response> {
+  await preflight(summary, call);
+
+  const outcome = await spend((relayer) =>
+    withTimeout<TxOutcome | null>(
+      relayer.relayMetaTransaction(signed).then((res) => summarizeOutcome(res as Parameters<typeof summarizeOutcome>[0], emitters)),
+      RELAY_TIMEOUT_MS,
+      () => null,
+    ).catch((e: unknown) => {
+      // Sent but not confirmed, or failed in a way we cannot classify: the caller must
+      // re-read chain state rather than retry blindly.
+      console.error("[relay] outcome unknown", e);
+      return null;
+    }),
+  );
+  if (!outcome) return Response.json({ status: "unknown" }, { status: 202 });
+  return Response.json(outcome);
 }

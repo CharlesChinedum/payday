@@ -91,13 +91,22 @@ export const streamCountOf = (accountId: string) =>
   viewFunction<number>(config.payday, "stream_count_of", { account_id: accountId });
 
 export async function paydayConfig() {
-  const c = await viewFunction<{ stream_fee: string; registration_fee: string; paused: boolean }>(
+  const c = await viewFunction<{ stream_fee: string; registration_fee: string; payout_fee: string; paused: boolean }>(
     config.payday,
     "config",
     {},
   );
-  return { streamFee: BigInt(c.stream_fee), registrationFee: BigInt(c.registration_fee), paused: c.paused };
+  return {
+    streamFee: BigInt(c.stream_fee),
+    registrationFee: BigInt(c.registration_fee),
+    payoutFee: BigInt(c.payout_fee),
+    paused: c.paused,
+  };
 }
+
+/** Whether `accountId` is registered with USDC (NEP-145), so a payout to it needs no registration. */
+export const isRegistered = async (accountId: string) =>
+  (await viewFunction<unknown>(config.usdc, "storage_balance_of", { account_id: accountId })) !== null;
 
 /**
  * Everything an account could spend through Payday right now: its USDC balance, what

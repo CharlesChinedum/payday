@@ -58,8 +58,12 @@ describe("checkDelegate", () => {
     expect(check("app.test")).toMatchObject({ ok: false });
   });
 
-  it("caps gas and pins deposits, so the relayer never pays an attached deposit beyond 1 yocto", () => {
+  it("pins gas and deposits, so the relayer never pays an attached deposit beyond 1 yocto", () => {
     expect(check("app.test", call("withdraw", { stream_id: 1 }, PAYOUT + 1n))).toMatchObject({ ok: false });
+    expect(check("app.test", call("withdraw", { stream_id: 1 }, 40n * TGAS))).toMatchObject({
+      ok: false,
+      reason: "Gas must be exactly 100 Tgas",
+    });
     expect(check("app.test", call("withdraw", { stream_id: 1 }, PAYOUT, 1n))).toMatchObject({ ok: false });
     expect(check("usdc.test", call("ft_transfer_call", { receiver_id: "app.test", amount: "1000000", msg: fundMsg([stream]) }, FUNDING, 2n))).toMatchObject({ ok: false });
   });
@@ -88,5 +92,24 @@ describe("checkDelegate", () => {
     expect(
       transfer({ receiver_id: "app.test", amount: "1010000", msg: JSON.stringify({ streams: [stream], send_to: "bob.test" }) }),
     ).toMatchObject({ ok: false });
+  });
+
+  it("refuses Payday and the token as receivers, which the contract would reject", () => {
+    for (const receiver of ["app.test", "usdc.test"]) {
+      expect(check("app.test", call("withdraw", { stream_id: 1, receiver }))).toMatchObject({ ok: false });
+      expect(check("app.test", call("claim_owed", { receiver }))).toMatchObject({ ok: false });
+      expect(transfer({ receiver_id: "app.test", amount: "2000000", msg: JSON.stringify({ send_to: receiver }) })).toMatchObject({ ok: false });
+      expect(transfer({ receiver_id: "app.test", amount: "1010000", msg: fundMsg([{ ...stream, worker: receiver }]) })).toMatchObject({
+        ok: false,
+      });
+    }
+  });
+
+  it("accepts only a short string memo", () => {
+    const base = { receiver_id: "app.test", amount: "2000000", msg: JSON.stringify({ send_to: "bob.test" }) };
+    expect(transfer({ ...base, memo: null })).toMatchObject({ ok: true });
+    expect(transfer({ ...base, memo: "payroll" })).toMatchObject({ ok: true });
+    expect(transfer({ ...base, memo: { nested: true } })).toMatchObject({ ok: false, reason: "Invalid memo" });
+    expect(transfer({ ...base, memo: "x".repeat(65) })).toMatchObject({ ok: false, reason: "Invalid memo" });
   });
 });

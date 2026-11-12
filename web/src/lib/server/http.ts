@@ -61,8 +61,25 @@ export async function readJson(req: Request, maxBytes: number): Promise<Record<s
 }
 
 /** Vercel sets x-forwarded-for itself; on any other host put a trusted proxy in front. */
+/**
+ * The rate-limit key for a request's client. IPv6 clients usually hold a whole /64, so
+ * they are keyed by it; keying by the full address would give each one 2^64 allowances.
+ */
 export function clientIp(req: Request): string {
-  return req.headers.get("x-forwarded-for")?.split(",")[0]?.trim().slice(0, 64) || "local";
+  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim().slice(0, 64) || "local";
+  return ip.includes(":") ? ipv6Prefix(ip) : ip;
+}
+
+/** The first four groups of an IPv6 address, expanding `::`; malformed input is kept whole. */
+export function ipv6Prefix(ip: string): string {
+  const addr = ip.replace(/^\[|\](:\d+)?$/g, "").split("%")[0].toLowerCase();
+  const [head, tail, ...rest] = addr.split("::");
+  if (rest.length) return addr;
+  const left = head ? head.split(":") : [];
+  const right = tail ? tail.split(":") : [];
+  const groups = tail === undefined ? left : [...left, ...Array(Math.max(0, 8 - left.length - right.length)).fill("0"), ...right];
+  if (groups.length !== 8 && !groups.at(-1)?.includes(".")) return addr;
+  return `${groups.slice(0, 4).map((g) => g.replace(/^0+(?=.)/, "")).join(":")}::/64`;
 }
 
 /** Races `work` against a timeout; `onTimeout` decides what the caller gets instead. */

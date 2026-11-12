@@ -1,6 +1,6 @@
 import { IMPLICIT_ACCOUNT, checkAddress } from "@/lib/address";
 import { CASH_OUT_ASSETS, ONE_USDC, config } from "@/lib/config";
-import { spendableOf } from "@/lib/server/chain";
+import { isRegistered, spendableOf } from "@/lib/server/chain";
 import { HttpError, clientIp, handle, readJson } from "@/lib/server/http";
 import { rateLimiter } from "@/lib/server/limits";
 
@@ -8,6 +8,8 @@ const ONE_CLICK = "https://1click.chaindefuser.com/v0";
 const UPSTREAM_TIMEOUT_MS = 10_000;
 const QUOTE_TTL_MS = 30 * 60_000;
 const U128 = /^(0|[1-9]\d{0,38})$/;
+/** A dollar-for-dollar quote may not promise more than this share of what goes in. */
+const MAX_OUT_PERCENT = 102n;
 const perIpQuote = rateLimiter("quote", 20, 60_000);
 const perIpStatus = rateLimiter("status", 60, 60_000);
 
@@ -56,9 +58,12 @@ export function POST(req: Request) {
     if (typeof body.amount !== "string" || !U128.test(body.amount)) throw new HttpError(400, "amount must be USDC base units");
     const amount = BigInt(body.amount);
     if (amount < ONE_USDC) throw new HttpError(400, "Cash out at least 1 USDC");
-    if (amount > (await spendableOf(refundTo))) throw new HttpError(400, "That is more than this account can cash out");
-
     const dry = config.networkId !== "mainnet";
+    const [spendable, refundable] = await Promise.all([spendableOf(refundTo), dry || isRegistered(refundTo)]);
+    if (amount > spendable) throw new HttpError(400, "That is more than this account can cash out");
+    // 1Click refunds on NEAR to refundTo; a refund to an account USDC does not know would be lost.
+    if (!refundable) throw new HttpError(400, "Withdraw once to this account first, so a refund can reach it");
+
     const deadline = new Date(Date.now() + QUOTE_TTL_MS).toISOString();
     const request = {
       dry,
@@ -78,8 +83,12 @@ export function POST(req: Request) {
     const { ok, status, body: reply } = await upstream("/quote", { method: "POST", body: JSON.stringify(request) });
     const data = reply as OneClickQuote;
     if (!ok) {
+      // 1Click's own message is logged, not passed on: it is untrusted text.
       console.error("[quote] 1Click refused", status, JSON.stringify(data).slice(0, 500));
-      throw new HttpError(status >= 500 ? 502 : 400, data?.message ?? "Quote failed");
+      throw new HttpError(
+        status >= 500 ? 502 : 400,
+        status >= 500 ? "The cash-out service is unavailable; try again shortly" : "No quote for this amount and destination",
+      );
     }
 
     const q = data.quote;
@@ -95,6 +104,12 @@ export function POST(req: Request) {
       throw new HttpError(502, "The cash-out service returned an unexpected deposit address");
     }
     if (![q.amountOut, q.minAmountOut].every((v) => typeof v === "string" && U128.test(v))) {
+      throw new HttpError(502, "The cash-out service returned an unexpected quote");
+    }
+    const out = BigInt(q.amountOut!);
+    const minOut = BigInt(q.minAmountOut!);
+    if (minOut === 0n || minOut > out || out * 100n > amount * MAX_OUT_PERCENT) {
+      console.error("[quote] implausible amounts", JSON.stringify(q).slice(0, 500));
       throw new HttpError(502, "The cash-out service returned an unexpected quote");
     }
     return Response.json({
