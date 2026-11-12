@@ -15,6 +15,8 @@ export interface NetworkConfig {
   hasFaucet: boolean;
   /** A long-running public stream the landing page shows live, where one exists. */
   demoStreamId?: number;
+  /** A Sputnik DAO that pays through Payday, shown on the DAO payroll page. */
+  demoDao?: string;
 }
 
 

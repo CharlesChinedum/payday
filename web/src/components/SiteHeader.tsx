@@ -10,6 +10,7 @@ import { LiveDot } from "./ui";
 const LINKS = [
   { href: "/employer", label: "Run payroll" },
   { href: "/worker", label: "My pay" },
+  { href: "/dao", label: "DAOs" },
 ] as const;
 
 export function SiteHeader() {

@@ -87,8 +87,15 @@ export function PayrollComposer(props: {
   disabled: boolean;
   /** Resolves true when the payroll was funded, so the form can be cleared. */
   onFund: (rows: PayrollRow[], total: bigint) => Promise<boolean>;
+  /** Who pays, for the shortfall message: "You need…" or "The DAO needs…". */
+  payer?: string;
+  submitLabel?: string;
+  title?: string;
+  /** A DAO can top up its treasury before the vote passes, so a shortfall only warns. */
+  allowShortfall?: boolean;
 }) {
   const { balance, streamFee, nowSecs, ownWorkerId, funding, disabled, onFund } = props;
+  const { payer = "You need", submitLabel = "Fund payroll", title = "New payroll", allowShortfall = false } = props;
   const [drafts, setDrafts] = useState<Draft[]>([{ ...EMPTY_DRAFT_ROW, id: 0 }]);
   const [dragging, setDragging] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
@@ -134,7 +141,7 @@ export function PayrollComposer(props: {
 
   return (
     <Card
-      title="New payroll"
+      title={title}
       aside={
         <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-2 py-1 text-sm text-muted transition hover:bg-surface-2 hover:text-text">
           <UploadIcon /> Import CSV
@@ -195,11 +202,11 @@ export function PayrollComposer(props: {
             : "error" in parsed
               ? parsed.error
               : shortfall > 0n
-                ? `You need ${formatUsdc(shortfall)} more USDC to fund this.`
+                ? `${payer} ${formatUsdc(shortfall)} more USDC to fund this.`
                 : `${summarizeRows(parsed.rows)} + ${formatUsdc(parsed.fees)} USDC in Payday fees`}
         </p>
-        <Button loading={funding} disabled={disabled || !("rows" in parsed) || shortfall > 0n} onClick={fund}>
-          Fund payroll
+        <Button loading={funding} disabled={disabled || !("rows" in parsed) || (shortfall > 0n && !allowShortfall)} onClick={fund}>
+          {submitLabel}
         </Button>
       </div>
     </Card>

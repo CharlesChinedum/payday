@@ -214,6 +214,39 @@ function CashOut() {
   );
 }
 
+const DAO_STEPS = [
+  ["Draft", "List contributors or import a CSV. Payday writes one proposal that opens every salary."],
+  ["Vote", "Your council votes in the DAO tools it already uses. Payday never holds a key to the treasury."],
+  ["Stream", "The vote that passes it funds the streams. Contributors are paid by the second from then on."],
+] as const;
+
+function Daos() {
+  return (
+    <Section className="reveal grid gap-10 lg:grid-cols-[0.8fr_1.2fr] lg:gap-16">
+      <div>
+        <Eyebrow>For DAOs</Eyebrow>
+        <h2 className="display mt-4 text-4xl sm:text-5xl">Your treasury votes once. Contributors get paid every second.</h2>
+        <p className="mt-5 text-muted">
+          A Sputnik DAO can run its payroll through Payday: the DAO is the employer, and every salary, payout and cancel
+          is on-chain for members to check.
+        </p>
+        <Link href="/dao" className="mt-6 inline-flex items-center gap-1.5 text-sm font-medium text-accent hover:underline">
+          Set up DAO payroll <ArrowRightIcon />
+        </Link>
+      </div>
+      <ol className="grid gap-4 sm:grid-cols-3">
+        {DAO_STEPS.map(([title, body], i) => (
+          <li key={title} className="rounded-2xl border border-border bg-surface p-5">
+            <span className="num text-xs text-muted">0{i + 1}</span>
+            <h3 className="mt-2 font-medium">{title}</h3>
+            <p className="mt-1 text-sm text-muted">{body}</p>
+          </li>
+        ))}
+      </ol>
+    </Section>
+  );
+}
+
 function ClosingCall() {
   return (
     <Section className="reveal">
@@ -251,6 +284,7 @@ export default function Home() {
       <How />
       <Proof />
       <CashOut />
+      <Daos />
       <ClosingCall />
     </>
   );

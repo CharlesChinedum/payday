@@ -29,12 +29,19 @@ function CancelConfirm(props: { stream: StreamRecord; now: number; onConfirm: ()
   );
 }
 
-function StreamRow(props: { stream: StreamRecord; now: number; disabled: boolean; cancelling: boolean; onCancel: () => void }) {
-  const { stream, now, disabled, cancelling, onCancel } = props;
+function StreamRow(props: {
+  stream: StreamRecord;
+  now: number;
+  disabled: boolean;
+  cancelling: boolean;
+  onCancel: () => void;
+  proposeOnly: boolean;
+}) {
+  const { stream, now, disabled, cancelling, onCancel, proposeOnly } = props;
   const [confirming, setConfirming] = useState(false);
   const status = statusOf(stream, now);
   return (
-    <li className="grid gap-4 py-5 first:pt-0 last:pb-0 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1.6fr)_6.5rem] lg:items-center">
+    <li className="grid gap-4 py-5 first:pt-0 last:pb-0 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1.6fr)_8rem] lg:items-center">
       <div className="space-y-2">
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <span className="font-medium">#{stream.id}</span>
@@ -67,11 +74,17 @@ function StreamRow(props: { stream: StreamRecord; now: number; disabled: boolean
       </dl>
 
       <div className="flex justify-end">
-        {status !== "finished" && (
-          <Button variant="danger" loading={cancelling} disabled={disabled || confirming} onClick={() => setConfirming(true)}>
-            Cancel
-          </Button>
-        )}
+        {status !== "finished" &&
+          (proposeOnly ? (
+            // A DAO decides by vote, so there is nothing to confirm here: this only drafts.
+            <Button variant="secondary" disabled={disabled} onClick={onCancel}>
+              Propose stop
+            </Button>
+          ) : (
+            <Button variant="danger" loading={cancelling} disabled={disabled || confirming} onClick={() => setConfirming(true)}>
+              Cancel
+            </Button>
+          ))}
       </div>
 
       {confirming && (
@@ -95,8 +108,10 @@ export function StreamsTable(props: {
   disabled: boolean;
   cancellingId: number | null;
   onCancel: (streamId: number) => void;
+  /** For a DAO's streams: the button drafts a cancel proposal instead of cancelling. */
+  proposeOnly?: boolean;
 }) {
-  const { streams, now, disabled, cancellingId, onCancel } = props;
+  const { streams, now, disabled, cancellingId, onCancel, proposeOnly = false } = props;
   return (
     <ul className="divide-y divide-border">
       {streams.map((s) => (
@@ -107,6 +122,7 @@ export function StreamsTable(props: {
           disabled={disabled}
           cancelling={cancellingId === s.id}
           onCancel={() => onCancel(s.id)}
+          proposeOnly={proposeOnly}
         />
       ))}
     </ul>

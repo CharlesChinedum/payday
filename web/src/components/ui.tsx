@@ -67,6 +67,9 @@ function Spinner() {
 const PILL_TONES = {
   live: "bg-accent-soft text-accent",
   neutral: "bg-surface-2 text-muted",
+  good: "bg-accent-soft text-accent",
+  bad: "bg-danger-soft text-danger",
+  wait: "bg-warn-soft text-text",
 } as const;
 
 export function Pill({ tone = "neutral", children }: { tone?: keyof typeof PILL_TONES; children: ReactNode }) {

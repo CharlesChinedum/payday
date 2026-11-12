@@ -21,6 +21,7 @@ Workers also wait a whole month to be paid for work they did on day one.
 5. **The employer can stop a stream.** Cancelling refunds everything not yet earned; the worker keeps everything they already earned.
 6. **Money can always leave.** Anyone can send what their Payday account holds to any NEAR account or another chain, and claim anything Payday is holding for them.
 7. **The accountant gets a CSV.** Every stream with paid out, earned and not yet earned, in UTC.
+8. **DAOs can run payroll too.** A Sputnik DAO pays its contributors the same way: Payday drafts one proposal, the council votes, and the vote that passes it funds every stream, with the DAO as the employer.
 
 ## How NEAR is used
 
@@ -31,6 +32,7 @@ Workers also wait a whole month to be paid for work they did on day one.
 | Meta transactions (NEP-366) | Users sign a delegate action in the browser; the Payday relayer verifies it, checks it against chain state, submits it and pays the gas. |
 | Implicit accounts | Each browser makes its own ed25519 key from a 12-word recovery phrase; its account is the key's hex. Payday creates the account (1 yoctoNEAR) once it holds USDC or a salary. |
 | NEAR Intents, 1Click API | Cross-chain cash-out from NEAR USDC to USDC/USDT on other chains. |
+| Sputnik DAO (v2) | DAO payroll: a function-call proposal makes the DAO's USDC `ft_transfer_call` to Payday, so the DAO is the employer of every stream it votes in. Payday reads the DAO's policy, proposals and votes and never signs for it. |
 
 ## Fees
 
@@ -86,6 +88,15 @@ cd web && pnpm install && pnpm smoke https://payday-near-eight.vercel.app
 
 You should see ✓ lines for the faucet, both accounts, funding, a withdrawal, a send, and eleven refused attacks, then `PASS`.
 
+### 0b. Pay from a DAO
+
+Open https://payday-near-eight.vercel.app/dao and enter a Sputnik DAO on testnet (for example one made at `sputnikv2.testnet`).
+
+1. You see the DAO's USDC, the salaries it pays, who votes and the vote threshold.
+2. Add contributors and click **Draft proposal**. You get a ready-to-run NEAR CLI command that submits it with the DAO's bond.
+3. Once a council member submits it, it appears under **Payday proposals** with its votes, and a vote command for the others. The proposal's effect is read from its arguments, not its description.
+4. The vote that passes it funds the streams; they appear under **Salaries this DAO pays**, where **Propose stop** drafts a cancel.
+
 ### 1. Run the tests
 
 Requirements: Rust 1.95 or newer, [cargo-near](https://github.com/near/cargo-near) 0.23 or newer, Node 24 and pnpm.
@@ -101,7 +112,7 @@ You should see `64 passed` (unit), `9 passed` (integration) and `7 passed` (secu
 cd web && pnpm test
 ```
 
-You should see `55 passed`: the relayer policy and pre-flight, IPv6 rate-limit keys, signature verification (including the audit's forged delegate), delegate decoding, reading results from events, address checksums, recovery phrases, amount and date parsing, vesting maths and the CSVs.
+You should see `65 passed`: the relayer policy and pre-flight, IPv6 rate-limit keys, DAO proposals (built, read back from their arguments, and safely quoted in CLI commands), signature verification (including the audit's forged delegate), delegate decoding, reading results from events, address checksums, recovery phrases, amount and date parsing, vesting maths and the CSVs.
 
 ### 2. Run everything locally
 
