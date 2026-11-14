@@ -69,7 +69,7 @@ Fees pay for what Payday spends on its users' behalf: storage for streams, USDC 
 | Mock USDC (6 decimals) | [`usdc.payday-dev.testnet`](https://testnet.nearblocks.io/address/usdc.payday-dev.testnet) |
 | Demo DAO (Sputnik v2, 2-member council) | [`payday-demo.sputnikv2.testnet`](https://testnet.nearblocks.io/address/payday-demo.sputnikv2.testnet) |
 
-The testnet contract started as version 1.0.0 and was upgraded in place to 2.0.0 (`scripts/testnet.sh migrate-v1`), then to 2.1.0 through its own owner-only `upgrade` ([transaction](https://testnet.nearblocks.io/txns/F32xKD7sGBTLnKnCiA4Qcbq1xk5CxmvzPTDNN29pPbTj)), keeping every stream. Its `code_hash` is `Cbq2GbMtb21QmSHWkVpM4AezjcZPDVYGQJNrN6XQDhii`, the reproducible build CI made of commit `800cb71`: rebuild it with `cargo near build reproducible-wasm` and check with `scripts/code_hash.py`.
+The testnet contract started as version 1.0.0 and was upgraded in place to 2.0.0 (`scripts/testnet.sh migrate-v1`), then to 2.1.0 and 2.2.0 through its own owner-only `upgrade` ([2.2.0 transaction](https://testnet.nearblocks.io/txns/EGEg4uGd7SxHhEbLcTz7rUX3rXncXym8wtW3LT2PksG2)), keeping every stream. Its `code_hash` is `nFpV3KZjZDmccZgKXd6jNni1nkjS3ixFdRjd3P9fGCW`, the reproducible build CI made of commit `627812a`: rebuild it with `cargo near build reproducible-wasm` and check with `scripts/code_hash.py`.
 
 ## Try it
 
