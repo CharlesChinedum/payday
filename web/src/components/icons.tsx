@@ -101,8 +101,16 @@ export const MonitorIcon = (p: IconProps) => (
 export function Logo({ className = "" }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
-      <circle cx="12" cy="12" r="11" className="fill-text" />
-      <circle cx="12" cy="12" r="4" className="fill-lime" />
+      <rect x="1" y="1" width="22" height="22" rx="6.5" className="fill-accent" />
+      <path
+        d="M6 16.5l3.6-3.8 3 2.2L18 8.5"
+        className="stroke-lime"
+        fill="none"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <circle cx="18" cy="8.5" r="1.6" className="fill-lime" />
     </svg>
   );
 }

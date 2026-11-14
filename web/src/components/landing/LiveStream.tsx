@@ -49,7 +49,7 @@ function StreamCard({ stream }: { stream: StreamRecord }) {
         </ExplorerLink>
       </div>
 
-      <p className="mt-5 text-xs font-medium uppercase tracking-wider text-muted">Earned so far, stream #{stream.id}</p>
+      <p className="mt-5 text-xs font-medium text-muted">Earned so far, stream #{stream.id}</p>
       <p className="mt-1 text-4xl font-semibold tracking-tight sm:text-5xl">
         <LiveAmount amountAt={(nowMs) => vestedSmooth(deposit, stream.start, stream.stop, nowMs)} />
       </p>

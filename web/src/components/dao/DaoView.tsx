@@ -386,7 +386,7 @@ function DaoPanel({ dao }: { dao: string }) {
                   <CountAmount value={committed} />
                 </Stat>
                 <div className="text-sm">
-                  <div className="text-xs font-medium uppercase tracking-wider text-muted">Who decides</div>
+                  <div className="text-xs font-medium text-muted">Who decides</div>
                   <ul className="mt-2 space-y-1">
                     {voters(data.policy).map((v) => (
                       <li key={v.role}>

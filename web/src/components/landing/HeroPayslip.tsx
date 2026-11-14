@@ -41,15 +41,15 @@ export function HeroPayslip() {
 
   return (
     <div className="group relative mx-auto w-full max-w-sm [perspective:1200px]">
-      <div className="payslip-edge -rotate-2 bg-paper px-6 pb-9 pt-6 text-paper-ink shadow-lift transition-transform duration-500 ease-out group-hover:rotate-0 group-hover:-translate-y-1">
-        <div className="flex items-center justify-between text-[11px] font-medium uppercase tracking-[0.18em]">
-          <span>Payslip</span>
+      <div className="payslip-edge bg-paper px-6 pb-7 pt-6 text-paper-ink shadow-lift transition-transform duration-500 ease-out group-hover:-translate-y-1">
+        <div className="flex items-center justify-between text-xs font-medium">
+          <span className="opacity-60">Payslip</span>
           <span className="inline-flex items-center gap-2">
             <LiveDot /> Streaming
           </span>
         </div>
 
-        <div className="my-4 border-t border-dashed border-paper-rule" />
+        <div className="my-4 border-t border-paper-rule" />
 
         <label className="block text-xs">
           <span className="flex items-baseline justify-between">
@@ -63,7 +63,7 @@ export function HeroPayslip() {
             step={SALARY.step}
             value={monthly}
             onChange={(e) => setMonthly(Number(e.target.value))}
-            className="mt-2 w-full cursor-grab accent-[#0a6847] active:cursor-grabbing"
+            className="mt-2 w-full cursor-grab accent-[var(--lime)] active:cursor-grabbing"
           />
         </label>
 
@@ -72,14 +72,14 @@ export function HeroPayslip() {
           <Line label="Per day">{formatUsdc(BigInt(Math.round(unitsPerSecond * 86_400)))}</Line>
         </div>
 
-        <div className="my-4 border-t border-dashed border-paper-rule" />
+        <div className="my-4 border-t border-paper-rule" />
 
-        <p className="text-[11px] font-medium uppercase tracking-[0.18em]">Earned since you opened this page</p>
+        <p className="text-xs font-medium opacity-60">Earned since you opened this page</p>
         <p className="mt-1 text-4xl font-medium tracking-tight">
           <LiveAmount amountAt={earnedAt} />
         </p>
 
-        <div className="my-4 border-t border-dashed border-paper-rule" />
+        <div className="my-4 border-t border-paper-rule" />
 
         <div className="space-y-2 text-xs">
           <Line label="Gas paid by worker">0.00 NEAR</Line>

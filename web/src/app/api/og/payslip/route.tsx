@@ -27,7 +27,7 @@ export async function GET(req: Request) {
     return renderCard(
       {
         ...card,
-        kicker: "PAYSLIP · PAYDAY",
+        kicker: "Payday · Payslip",
         badge: `Read live from NEAR ${config.networkId}`,
         footer: { label: "Paid to", value: shortId(worker) },
       },

@@ -17,7 +17,7 @@ export async function GET(req: Request) {
   if (`${url.pathname}${url.search}` !== canonical) return Response.redirect(new URL(canonical, url), 308);
   return renderCard(
     {
-      kicker: "PAYMENT REQUEST · PAYDAY",
+      kicker: "Payday · Payment request",
       title: request.note ? `“${request.note}”` : "Pay me by the second",
       amount: `${requestAmount(request.amount)} USDC`,
       caption: `Over ${daysText(request.days)}, streamed by the second. Open the link to fund it.`,

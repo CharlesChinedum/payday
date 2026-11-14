@@ -163,27 +163,27 @@ function Payslip(props: {
       <article className="payslip-edge bg-paper px-6 pb-10 pt-6 text-paper-ink shadow-lift sm:px-10 print:shadow-none">
         <header className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-[11px] font-medium uppercase tracking-[0.18em]">Payslip · Payday</p>
+            <p className="text-xs font-medium opacity-60">Payslip · Payday</p>
             <h1 className="display mt-1 text-4xl">{period.label}</h1>
             <p className="mt-1 text-xs opacity-70">
               {fmtDay(period.from)} to {period.toDate ? `${fmtDay(period.to)} (month to date)` : fmtDay(period.to - 1)}, UTC
             </p>
           </div>
           <div className="text-right text-xs">
-            <p className="font-medium uppercase tracking-[0.18em]">Paid to</p>
+            <p className="font-medium opacity-60">Paid to</p>
             <p className="num mt-1 break-all text-sm">{worker}</p>
             <p className="mt-2 opacity-70">Read from NEAR {config.networkId} {fmtStamp(state.readAt)}</p>
           </div>
         </header>
 
-        <div className="my-5 border-t border-dashed border-paper-rule" />
+        <div className="my-5 border-t border-paper-rule" />
 
         {lines.length === 0 ? (
           <p className="text-sm">No Payday salary was earned by this account in {period.label}.</p>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-left text-[11px] uppercase tracking-[0.14em] opacity-70">
+              <tr className="text-left text-xs opacity-60">
                 <th className="pb-2 font-medium">Employer</th>
                 <th className="pb-2 font-medium">Stream</th>
                 <th className="pb-2 text-right font-medium">Per day</th>
@@ -214,7 +214,7 @@ function Payslip(props: {
           </table>
         )}
 
-        <div className="my-5 border-t border-dashed border-paper-rule" />
+        <div className="my-5 border-t border-paper-rule" />
 
         <div className="space-y-2">
           <Row label={`Earned in ${period.label}${period.toDate ? " so far" : ""}`}>
@@ -225,10 +225,10 @@ function Payslip(props: {
           <Row label="Withdrawn from these streams, as of today">{formatUsdc(paidOut)} USDC</Row>
         </div>
 
-        <div className="my-5 border-t border-dashed border-paper-rule" />
+        <div className="my-5 border-t border-paper-rule" />
 
         <section className="space-y-2 text-xs leading-relaxed">
-          <p className="font-medium uppercase tracking-[0.18em]">How to check this payslip</p>
+          <p className="text-sm font-semibold">How to check this payslip</p>
           <p>
             Payday did not sign this document: every figure is read from Payday&apos;s contract{" "}
             <ExplorerLink href={accountUrl(config.payday)} className="num">

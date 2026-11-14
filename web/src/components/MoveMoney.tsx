@@ -470,7 +470,7 @@ export function MoveMoney(props: {
 
       {records.length > 0 && (
         <div className="mt-6 border-t border-border pt-4">
-          <h3 className="text-xs font-medium uppercase tracking-wider text-muted">Recent cash-outs</h3>
+          <h3 className="text-xs font-medium text-muted">Recent cash-outs</h3>
           <ul className="mt-2 space-y-2 text-sm">
             {records.map((r) => (
               <li key={r.depositAddress} className="flex flex-wrap items-center gap-2">
