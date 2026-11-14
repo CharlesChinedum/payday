@@ -38,7 +38,7 @@ const INK = "#14211b";
 const PAPER = "#f8f5ea";
 const RULE = "#cfc9b6";
 const ACCENT = "#0a6847";
-const perIp = rateLimiter("preview", 60, 60_000);
+const perIp = rateLimiter({ id: "card-ip", label: "preview", limit: 60, windowMs: 60_000 });
 const font = (file: string) => readFile(join(process.cwd(), "assets", file));
 const fonts = Promise.all([font("Geist-Regular.ttf"), font("InstrumentSerif-Regular.woff")]);
 
@@ -111,9 +111,9 @@ export async function renderCard(card: CardContent, req: Request, cacheControl: 
 }
 
 /** Per-IP limit for card routes: a 429 response, or null to go ahead. */
-export function limitCards(req: Request): Response | null {
+export async function limitCards(req: Request): Promise<Response | null> {
   try {
-    perIp(clientIp(req));
+    await perIp(clientIp(req));
     return null;
   } catch (e) {
     if (e instanceof HttpError) return new Response(e.message, { status: e.status });

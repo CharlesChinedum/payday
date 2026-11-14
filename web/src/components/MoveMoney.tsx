@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { KeyPair } from "near-api-js";
+import type { BrowserKey } from "@/lib/keys";
 import { addressHint, checkAddress, isNearAccountId } from "@/lib/address";
 import { CASH_OUT_ASSETS, GAS_TGAS, ONE_USDC, ONE_YOCTO, config, type CashOutAsset } from "@/lib/config";
 import type { StreamRecord } from "@/lib/csv";
@@ -167,7 +167,7 @@ function QuoteSummary({ offer, gross, now }: { offer: Offer; gross: bigint; now:
  * is holding for the account after a transfer could not complete.
  */
 export function MoveMoney(props: {
-  keyPair: KeyPair;
+  signingKey: BrowserKey;
   accountId: string;
   streams: StreamRecord[];
   balance: bigint;
@@ -177,7 +177,7 @@ export function MoveMoney(props: {
   onDone: () => void;
   log: LogFn;
 }) {
-  const { keyPair, accountId, streams, balance, owed, fees, now, onDone, log } = props;
+  const { signingKey, accountId, streams, balance, owed, fees, now, onDone, log } = props;
   const salaryAvailable = streams.length > 0;
   const [source, setSource] = useState<Source>(salaryAvailable ? "salary" : "account");
   const [destination, setDestination] = useState<Destination>("chain");
@@ -224,10 +224,10 @@ export function MoveMoney(props: {
   /** Pays `gross` to `receiver` from the chosen source, gas-free. */
   function pay(receiver: string, gross: bigint): Promise<RelayResult> {
     if (effectiveSource === "salary" && stream) {
-      return relayCall(keyPair, config.payday, "withdraw", { stream_id: stream.id, amount: gross.toString(), receiver }, GAS_TGAS.payout);
+      return relayCall(signingKey, config.payday, "withdraw", { stream_id: stream.id, amount: gross.toString(), receiver }, GAS_TGAS.payout);
     }
     const msg = JSON.stringify({ send_to: receiver });
-    return relayCall(keyPair, config.usdc, "ft_transfer_call", { receiver_id: config.payday, amount: gross.toString(), msg }, GAS_TGAS.funding, ONE_YOCTO);
+    return relayCall(signingKey, config.usdc, "ft_transfer_call", { receiver_id: config.payday, amount: gross.toString(), msg }, GAS_TGAS.funding, ONE_YOCTO);
   }
 
   async function getQuote() {
@@ -315,7 +315,7 @@ export function MoveMoney(props: {
   async function claim() {
     setBusy("claim");
     try {
-      const res = await relayCall(keyPair, config.payday, "claim_owed", {}, GAS_TGAS.payout);
+      const res = await relayCall(signingKey, config.payday, "claim_owed", {}, GAS_TGAS.payout);
       report(log, res, (o) => {
         const paid = paidOut(o).find((p) => p.receiver === accountId);
         return paid

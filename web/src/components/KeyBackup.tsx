@@ -73,7 +73,7 @@ export function KeyBackup({ role, accountId }: { role: Role; accountId: string }
   const backedUp = useBackedUp(role);
   const backup = backupOf(role);
 
-  function restore() {
+  async function restore() {
     setError(null);
     let restoredId: string;
     try {
@@ -96,16 +96,29 @@ export function KeyBackup({ role, accountId }: { role: Role; accountId: string }
         "Keep the current account's recovery phrase: it is the only way back to it.",
     );
     if (!replace) return;
-    restoreKey(role, input);
+    try {
+      await restoreKey(role, input);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      return;
+    }
     window.location.reload();
   }
 
   return (
     <Card title="Back up this account" aside={backedUp ? <span className="text-xs text-accent">Backed up</span> : null}>
       <p className="text-sm text-muted">
-        Payday keeps your account key in this browser only. Write the recovery {backup?.kind === "key" ? "key" : "phrase"}{" "}
-        down somewhere safe: it is the only way back in from another browser, and anyone who has it can move your money.
+        Payday keeps your account key in this browser only, locked so no page or extension can read it out. Write the
+        recovery {backup?.kind === "key" ? "key" : "phrase"} down somewhere safe: it is the only way back in from another
+        browser, and anyone who has it can move your money.
       </p>
+
+      {!backup && backedUp && (
+        <p className="mt-4 rounded-xl border border-border bg-bg p-4 text-sm text-muted">
+          Your recovery phrase is no longer stored in this browser: only the copy you saved can restore this account
+          elsewhere. If you have lost it, move your money to a new account while this browser still has the key.
+        </p>
+      )}
 
       {backup && (
         <div className="mt-4">
@@ -140,6 +153,10 @@ export function KeyBackup({ role, accountId }: { role: Role; accountId: string }
                 {!backedUp && (
                   <Button
                     onClick={() => {
+                      const sure = window.confirm(
+                        "Payday will delete the phrase from this browser, so your saved copy will be the only one. Continue?",
+                      );
+                      if (!sure) return;
                       markBackedUp(role);
                       notify();
                     }}

@@ -1,15 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import type { KeyPair } from "near-api-js";
 import type { StreamRecord } from "./csv";
-import { loadOrCreateKey, readKey, type Role } from "./keys";
-import { getFees, getOwed, getStreams, getUsdcBalance, implicitId, type Fees } from "./near";
+import { loadOrCreateKey, readAccountId, type BrowserKey, type Role } from "./keys";
+import { getFees, getOwed, getStreams, getUsdcBalance, type Fees } from "./near";
 
 export type AccountState =
   | { status: "loading" }
   | { status: "error"; error: string }
-  | { status: "ready"; keyPair: KeyPair; accountId: string };
+  | { status: "ready"; key: BrowserKey; accountId: string };
 
 /**
  * This browser's account for `role`. The key is created on first use; the on-chain
@@ -20,7 +19,7 @@ export function useRoleAccount(role: Role): AccountState {
   useEffect(() => {
     let cancelled = false;
     loadOrCreateKey(role).then(
-      (keyPair) => !cancelled && setState({ status: "ready", keyPair, accountId: implicitId(keyPair) }),
+      (key) => !cancelled && setState({ status: "ready", key, accountId: key.accountId }),
       (e: Error) => !cancelled && setState({ status: "error", error: e.message }),
     );
     return () => {
@@ -34,14 +33,7 @@ const noop = () => () => {};
 
 /** The other role's account id in this browser, if that role has been opened before. */
 export function useOtherRoleId(role: Role): string | null {
-  return useSyncExternalStore(
-    noop,
-    () => {
-      const kp = readKey(role);
-      return kp ? implicitId(kp) : null;
-    },
-    () => null,
-  );
+  return useSyncExternalStore(noop, () => readAccountId(role), () => null);
 }
 
 export function useNow(intervalMs: number): number {

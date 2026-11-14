@@ -25,7 +25,7 @@
 use near_sdk::borsh::BorshDeserialize;
 use near_sdk::json_types::U128;
 use near_sdk::serde_json::json;
-use near_sdk::store::LookupMap;
+use near_sdk::store::{LookupMap, LookupSet};
 use near_sdk::{
     env, ext_contract, near, require, AccountId, BorshStorageKey, Gas, NearToken, PanicOnDefault,
     Promise, PromiseError, PromiseOrValue,
@@ -34,7 +34,7 @@ use near_sdk::{
 #[cfg(test)]
 mod tests;
 
-pub const VERSION: &str = "2.0.0";
+pub const VERSION: &str = "2.1.0";
 
 /// 1 USDC (6 decimals): the smallest stream, and the smallest payout to another account.
 pub const MIN_STREAM_AMOUNT: u128 = 1_000_000;
@@ -87,6 +87,7 @@ enum StorageKey {
     Streams,
     ByAccount,
     Owed,
+    Registered,
 }
 
 #[near(serializers = [borsh])]
@@ -197,6 +198,28 @@ pub struct Payday {
     streams: LookupMap<u64, Stream>,
     by_account: LookupMap<AccountId, Vec<u64>>,
     owed: LookupMap<AccountId, u128>,
+    /// Accounts Payday has paid a USDC registration for. Circle's USDC refunds the
+    /// registration deposit to the account itself when it unregisters, so paying twice
+    /// for one account would let it farm the deposit (I-07).
+    registered: LookupSet<AccountId>,
+}
+
+/// State layout of version 2.0.0.
+#[derive(BorshDeserialize)]
+#[borsh(crate = "near_sdk::borsh")]
+struct PaydayV2 {
+    token: AccountId,
+    owner: AccountId,
+    proposed_owner: Option<AccountId>,
+    paused: bool,
+    stream_fee: u128,
+    registration_fee: u128,
+    payout_fee: u128,
+    fees_collected: u128,
+    next_id: u64,
+    streams: LookupMap<u64, Stream>,
+    by_account: LookupMap<AccountId, Vec<u64>>,
+    owed: LookupMap<AccountId, u128>,
 }
 
 /// State layout of version 1.0.0, kept so `migrate` can upgrade a live deployment.
@@ -228,17 +251,35 @@ impl Payday {
             streams: LookupMap::new(StorageKey::Streams),
             by_account: LookupMap::new(StorageKey::ByAccount),
             owed: LookupMap::new(StorageKey::Owed),
+            registered: LookupSet::new(StorageKey::Registered),
         }
     }
 
-    /// Re-reads state after a code upgrade. Accepts the current layout unchanged, or the
-    /// 1.0.0 layout, which needs `owner`.
+    /// Re-reads state after a code upgrade. Accepts the current layout unchanged, the
+    /// 2.0.0 layout, or the 1.0.0 layout, which needs `owner`.
     #[init(ignore_state)]
     #[private]
     pub fn migrate(owner: Option<AccountId>) -> Self {
         let bytes = env::storage_read(b"STATE").unwrap_or_else(|| env::panic_str("No state"));
         if let Ok(current) = near_sdk::borsh::from_slice::<Payday>(&bytes) {
             return current;
+        }
+        if let Ok(v2) = near_sdk::borsh::from_slice::<PaydayV2>(&bytes) {
+            return Self {
+                token: v2.token,
+                owner: v2.owner,
+                proposed_owner: v2.proposed_owner,
+                paused: v2.paused,
+                stream_fee: v2.stream_fee,
+                registration_fee: v2.registration_fee,
+                payout_fee: v2.payout_fee,
+                fees_collected: v2.fees_collected,
+                next_id: v2.next_id,
+                streams: v2.streams,
+                by_account: v2.by_account,
+                owed: v2.owed,
+                registered: LookupSet::new(StorageKey::Registered),
+            };
         }
         let old = near_sdk::borsh::from_slice::<PaydayV1>(&bytes)
             .unwrap_or_else(|_| env::panic_str("Unrecognised state layout"));
@@ -255,6 +296,7 @@ impl Payday {
             streams: old.streams,
             by_account: old.by_account,
             owed: old.owed,
+            registered: LookupSet::new(StorageKey::Registered),
         }
     }
 
@@ -529,6 +571,15 @@ impl Payday {
                 self.transfer_then_settle(None, account, receiver, gross, base_fee.0, source),
             );
         }
+        if self.registered.contains(&receiver) {
+            return PromiseOrValue::Value(self.fail_payout(
+                &account,
+                &receiver,
+                gross,
+                source,
+                "receiver is not registered with USDC and Payday already paid its registration once; register yourself first",
+            ));
+        }
         let fee = base_fee.0 + self.registration_fee;
         if gross <= fee {
             return PromiseOrValue::Value(self.fail_payout(
@@ -548,6 +599,8 @@ impl Payday {
                 "registration unavailable, try again later",
             ));
         }
+        // Recorded now: if the registration then fails, the account registers itself.
+        self.registered.insert(receiver.clone());
         let register = ext_ft::ext(self.token.clone())
             .with_attached_deposit(REGISTRATION_DEPOSIT)
             .with_static_gas(GAS_STORAGE_DEPOSIT)

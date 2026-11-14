@@ -51,15 +51,15 @@ Fees pay for what Payday spends on its users' behalf: storage for streams, USDC 
 
 | Part | Status |
 |---|---|
-| Streaming contract 2.0.0 (Rust, `contract/`) | **Done** — 64 unit tests, 9 sandbox integration tests, 7 sandbox security tests |
+| Streaming contract 2.1.0 (Rust, `contract/`) | **Done** — 66 unit tests, 9 sandbox integration tests, 7 sandbox security tests; reproducible build checked in CI |
 | Mock USDC for testnet (`mock-usdc/`) | **Done** — standard NEP-141, public `mint` (test networks only) |
 | Gasless relayer (`web/src/app/api/relay`) | **Done** — signature-verified, pre-flighted against chain state |
 | Web app (`web/`) | **Done** — landing page, employer and worker dashboards, backup and restore, move money out |
 | 1Click cash-out | **Quotes done** — live mainnet quotes on testnet; real swaps need the mainnet deploy |
 | CSV export | **Done** — per-stream accountant export |
-| Security review | **Done, two rounds** — see [AUDIT.md](AUDIT.md); fixes in contract 2.0.0 and the current web app |
+| Security review | **Done, three rounds** — see [AUDIT.md](AUDIT.md); every finding fixed or accepted except the deploy-day steps it lists |
 | Hosted demo | **Done** — https://payday-near-eight.vercel.app (testnet), redeployed from `main` on every push |
-| Mainnet deployment | Not started; the items AUDIT.md lists as open before mainnet come first |
+| Mainnet deployment | Not started: the deploy-day steps in AUDIT.md (`scripts/handover.sh`) and a re-review come first |
 
 ## Live on testnet
 
@@ -112,13 +112,13 @@ scripts/build.sh
 cd contract && cargo test
 ```
 
-You should see `64 passed` (unit), `9 passed` (integration) and `7 passed` (security). The sandbox tests deploy both contracts to a local NEAR node and check, with real cross-contract calls: funding with fees, payouts that carry the payout fee and register new receivers (charging registration only then), failed payouts restored to their stream with no fee kept, that the contract's USDC balance always equals what it owes, cancels that split funds exactly, sending USDC out through Payday, the owner upgrading the contract through itself, and that the attacks from [AUDIT.md](AUDIT.md) no longer work.
+You should see `66 passed` (unit), `9 passed` (integration) and `7 passed` (security). The sandbox tests deploy both contracts to a local NEAR node and check, with real cross-contract calls: funding with fees, payouts that carry the payout fee and register new receivers (charging registration only then), failed payouts restored to their stream with no fee kept, that the contract's USDC balance always equals what it owes, cancels that split funds exactly, sending USDC out through Payday, the owner upgrading the contract through itself, and that the attacks from [AUDIT.md](AUDIT.md) no longer work.
 
 ```bash
 cd web && pnpm test
 ```
 
-You should see `80 passed`: the relayer policy and pre-flight, payslip periods and earnings (split across months by the contract's vesting rule) and their share cards, request-to-be-paid links, exchange-rate validation, IPv6 rate-limit keys, DAO proposals (built, read back from their arguments, and safely quoted in CLI commands), signature verification (including the audit's forged delegate), delegate decoding, reading results from events, address checksums, recovery phrases, amount and date parsing, vesting maths and the CSVs.
+You should see `92 passed`: browser keys that cannot be read out (and still sign what the relayer accepts, migrate, restore), the shared rate limits and relay lock, the page CSP, the relayer policy and pre-flight, payslip periods and earnings (split across months by the contract's vesting rule) and their share cards, request-to-be-paid links, exchange-rate validation, IPv6 rate-limit keys, DAO proposals (built, read back from their arguments, and safely quoted in CLI commands), signature verification (including the audit's forged delegate), delegate decoding, reading results from events, address checksums, recovery phrases, amount and date parsing, vesting maths and the CSVs.
 
 ### 2. Run everything locally
 
@@ -179,7 +179,11 @@ All API routes accept only same-origin `application/json` requests with small bo
 
 A relayed transaction's own status only covers the delegate wrapper, so the app reads success from the contracts' NEP-297 events, counting only events from the contract that owns their standard.
 
-**Known limits:** the per-IP and per-sender limits live in each server instance's memory; the balance floor is the global stop. Payslips cover streams the contract still holds: a stream that ended and was fully withdrawn is deleted (to keep storage paid for) and drops off them; an indexer would bring that history back. On test networks the mock USDC is free, so the stream fee there is not a real cost.
+**Rate limits** are shared by every server instance through Upstash Redis (set `KV_REST_API_URL` and `KV_REST_API_TOKEN`, or the `UPSTASH_REDIS_REST_*` pair, as the Vercel Marketplace integration does); without them each instance limits on its own, and the relayer's balance floor is the global stop.
+
+**Keys and scripts:** each browser account's key is a non-extractable WebCrypto Ed25519 key in IndexedDB, so no script or extension can read it out, and its recovery phrase is deleted from the browser once the user confirms the backup. Every page is rendered per request with a nonce Content Security Policy (`web/src/proxy.ts`), so injected inline scripts do not run.
+
+**Known limits:** Payslips cover streams the contract still holds: a stream that ended and was fully withdrawn is deleted (to keep storage paid for) and drops off them; an indexer would bring that history back. On test networks the mock USDC is free, so the stream fee there is not a real cost.
 
 ## Contract design
 
@@ -192,7 +196,8 @@ A stream records: employer, worker, deposit, amount withdrawn, start and stop ti
 - **Cancel**: employer or worker. The employer is refunded the unearned part. The worker's earned part stays in the stream, or, below 1 USDC, moves to their `owed` balance so the stream can be deleted.
 - **Send**: `ft_transfer_call` to Payday with `msg` `{"send_to": "account"}` passes USDC on, registering the receiver if needed. This is how browser accounts move money out.
 - **Storage**: streams are deleted once fully paid out; `prune(stream_ids)` lets anyone delete settled ones; `streams_of(account, from_index, limit)` pages. Funding is refused, and registrations are skipped, if they would eat into a NEAR reserve kept for callbacks.
-- **Owner**: sets fees (0.001 to 1 USDC each), pauses new funding, withdraws collected fees, and upgrades the contract through `upgrade` (new code, then `migrate`), so the contract account can drop its own keys. Ownership moves in two steps.
+- **Owner**: sets fees (0.001 to 1 USDC each), pauses new funding, withdraws collected fees, and upgrades the contract through `upgrade` (new code, then `migrate`), so the contract account can drop its own keys. Ownership moves in two steps. On mainnet the owner is a Sputnik DAO and the contract account has no keys: `scripts/handover.sh` prints the steps, and upgrades are a DAO `store_blob` plus an `UpgradeRemote` vote. Anyone can rebuild a deployed commit with `cargo near build reproducible-wasm` (image pinned in `contract/Cargo.toml`) and compare `scripts/code_hash.py contract/target/near/payday.wasm` with the account's `code_hash`.
+- **Registrations**: Payday pays for an account's USDC registration at most once. Circle USDC refunds the deposit to an account that unregisters, so paying again would let it farm the deposit (AUDIT I-07).
 
 ## Prior work and what is new
 

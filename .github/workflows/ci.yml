@@ -39,6 +39,23 @@ jobs:
         working-directory: contract
         run: cargo test --tests -- --test-threads=2
 
+  reproducible:
+    name: Contract (reproducible build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cargo-near 0.23.0
+        run: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/near/cargo-near/releases/download/cargo-near-v0.23.0/cargo-near-installer.sh | sh
+      - name: Build in the pinned image (see contract/Cargo.toml)
+        working-directory: contract
+        run: cargo near build reproducible-wasm
+      - name: Code hash to compare with the deployed contract's code_hash
+        run: echo "code_hash $(scripts/code_hash.py contract/target/near/payday.wasm)" | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: payday-wasm-${{ github.sha }}
+          path: contract/target/near/payday.wasm
+
   web:
     name: Web (lint, tests, build, audit)
     runs-on: ubuntu-latest

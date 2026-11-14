@@ -1,6 +1,7 @@
-import { Account, JsonRpcProvider, actions, encodeSignedDelegate, type KeyPair, type KeyPairString } from "near-api-js";
+import { Account, JsonRpcProvider, actions, encodeSignedDelegate, type KeyPair } from "near-api-js";
 import { config, TGAS } from "./config";
 import type { StreamRecord } from "./csv";
+import { accountIdOf, type BrowserKey } from "./keys";
 import { eventsNamed, type ChainEvent, type TxOutcome } from "./outcome";
 
 export const provider = new JsonRpcProvider({ url: config.rpcUrl });
@@ -10,10 +11,6 @@ const MAX_STREAM_PAGES = 10;
 /** About two minutes of blocks: long enough to submit, short enough to be useless later. */
 const DELEGATE_TTL_BLOCKS = 120;
 
-function bytesToHex(bytes: Uint8Array): string {
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
-}
-
 function bytesToBase64(bytes: Uint8Array): string {
   let s = "";
   for (const b of bytes) s += String.fromCharCode(b);
@@ -21,11 +18,7 @@ function bytesToBase64(bytes: Uint8Array): string {
 }
 
 /** The NEAR account a key controls: its 32 bytes in hex. Usable before the account exists. */
-export function implicitId(keyPair: KeyPair): string {
-  const key = keyPair.getPublicKey();
-  if (!key.ed25519Key) throw new Error("Expected an ed25519 key");
-  return bytesToHex(key.ed25519Key.data);
-}
+export const implicitId = (keyPair: KeyPair): string => accountIdOf(keyPair.getPublicKey());
 
 async function postJson(path: string, body: unknown): Promise<{ status: number; data: Record<string, unknown> }> {
   const res = await fetch(path, {
@@ -57,11 +50,11 @@ async function accountExists(accountId: string): Promise<boolean> {
  * Makes sure the key's account exists on-chain so it can sign. Payday creates it the
  * first time it has something to protect; concurrent callers share one request.
  */
-function ensureAccount(keyPair: KeyPair): Promise<void> {
-  const publicKey = keyPair.getPublicKey().toString();
+function ensureAccount(key: BrowserKey): Promise<void> {
+  const publicKey = key.publicKey.toString();
   let pending = onboarding.get(publicKey);
   if (!pending) {
-    pending = accountExists(implicitId(keyPair)).then(async (exists) => {
+    pending = accountExists(key.accountId).then(async (exists) => {
       if (exists) return;
       const { status, data } = await postJson("/api/onboard", { publicKey });
       if (status !== 200) throw new Error(errorOf(data, "Could not set up your account"));
@@ -91,7 +84,7 @@ export type RelayResult =
  * at most), so the signer needs no NEAR.
  */
 export async function relayCall(
-  keyPair: KeyPair,
+  key: BrowserKey,
   receiverId: string,
   methodName: string,
   args: object,
@@ -99,11 +92,11 @@ export async function relayCall(
   deposit = 0n,
 ): Promise<RelayResult> {
   try {
-    await ensureAccount(keyPair);
+    await ensureAccount(key);
   } catch (e) {
     return { status: "refused", error: e instanceof Error ? e.message : String(e) };
   }
-  const account = new Account(implicitId(keyPair), provider, keyPair.toString() as KeyPairString);
+  const account = new Account(key.accountId, provider, key.signer);
   const { signedDelegate } = await account.createSignedMetaTransaction({
     receiverId,
     actions: [actions.functionCall(methodName, args, BigInt(gasTgas) * TGAS, deposit)],

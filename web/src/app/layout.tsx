@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { Suspense } from "react";
 import "@fontsource-variable/geist";
 import "@fontsource-variable/geist-mono";
@@ -19,12 +20,14 @@ export const metadata: Metadata = {
   description: "USDC payroll that streams every second. No gas for workers, cash out to any chain.",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default async function RootLayout({ children }: LayoutProps<"/">) {
+  // Set by src/proxy.ts for this request; reading it renders every page per request.
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
   return (
     // data-theme is set by THEME_SCRIPT before React hydrates, so the server's HTML differs.
     <html lang="en" className="h-full antialiased" suppressHydrationWarning>
       <head>
-        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+        <script nonce={nonce} dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
       </head>
       <body className="flex min-h-full flex-col">
         <Suspense>

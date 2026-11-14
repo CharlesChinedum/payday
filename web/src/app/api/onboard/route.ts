@@ -10,8 +10,8 @@ import { implicitAccountId, spend } from "@/lib/server/relayer";
  */
 const SEED_YOCTO = 1n;
 /** Lookups are cheap but still bounded; creations cost the relayer and are strict. */
-const lookupsPerIp = rateLimiter("account", 60, 60_000);
-const creationsPerIp = rateLimiter("new account", 10, 60 * 60_000);
+const lookupsPerIp = rateLimiter({ id: "onboard-lookup-ip", label: "account", limit: 60, windowMs: 60_000 });
+const creationsPerIp = rateLimiter({ id: "onboard-create-ip", label: "new account", limit: 10, windowMs: 60 * 60_000 });
 /**
  * Accounts this instance seeded in the last 10 minutes. Existence is read from final
  * state, which lags a fresh transfer, so this stops a burst for one key paying twice.
@@ -33,7 +33,7 @@ async function hasValue(accountId: string): Promise<boolean> {
 export function POST(req: Request) {
   return handle("onboard", async () => {
     const ip = clientIp(req);
-    lookupsPerIp(ip);
+    await lookupsPerIp(ip);
     const body = await readJson(req, 512);
     const accountId = implicitAccountId(body.publicKey);
 
@@ -44,7 +44,7 @@ export function POST(req: Request) {
     if (!(await hasValue(accountId))) {
       throw new HttpError(403, "This account has nothing to manage yet. It is set up once it holds USDC or a salary.");
     }
-    creationsPerIp(ip);
+    await creationsPerIp(ip);
 
     const now = Date.now();
     for (const [id, at] of recentlySeeded) if (now - at >= SEED_MEMORY_MS) recentlySeeded.delete(id);
