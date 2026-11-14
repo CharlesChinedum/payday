@@ -6,7 +6,8 @@
 | Commit reviewed | `7d1dc4a` |
 | Scope | `contract/` (Payday, Rust, near-sdk 5.30), `web/src/app/api/*` (relayer, onboarding, quote proxy), `web/src/lib` and the client code that signs and decides success, `scripts/` |
 | Out of scope | `mock-usdc/` beyond how it differs from Circle USDC; Vercel dashboard settings; NEAR Intents 1Click itself |
-| Method | Line-by-line review by the author's assistant plus two independent read-only reviewers (one contract, one server/client); 6 sandbox proof-of-concept tests (`contract/tests/audit_poc.rs`); targeted checks against NEAR testnet and read-only checks against mainnet USDC |
+| Note | An AI-assisted review directed by the author, in three rounds (below). It is not a third-party audit. |
+| Method | Line-by-line review by the author's AI assistant (Claude Code) plus two separate read-only AI reviewers (one contract, one server/client); 6 sandbox proof-of-concept tests (`contract/tests/audit_poc.rs`); targeted checks against NEAR testnet and read-only checks against mainnet USDC |
 
 ## Verdict
 
@@ -88,7 +89,7 @@ H-04, H-05, I-01, I-07 and the M-03 tooling were closed on branch `audit-close`,
 
 ## Third review (14 November 2026)
 
-The fixed code (`607fc27`, contract 2.1.0) was reviewed again from scratch by three independent reviewers, one each for the contract, the server and the browser. They were given the code, not this document, and read it only afterwards to avoid repeating accepted items. Every finding was then checked against the code by the author's assistant before it was fixed. Proofs of concept ran in a local sandbox and in unit tests; against the live site the reviewers sent only a few harmless requests.
+The fixed code (`607fc27`, contract 2.1.0) was reviewed again from scratch by three separate AI reviewers, one each for the contract, the server and the browser. They were given the code, not this document, and read it only afterwards to avoid repeating accepted items. Every finding was then checked against the code by the author's assistant before it was fixed. Proofs of concept ran in a local sandbox and in unit tests; against the live site the reviewers sent only a few harmless requests.
 
 No path to steal USDC was found. One contract bug could lose a user's USDC once the contract's NEAR reserve was used up, and one relayer bug let anyone lock every user out of the relayer for an hour. Both are fixed in contract 2.2.0 and the web app.
 

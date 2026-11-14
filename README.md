@@ -57,7 +57,7 @@ Fees pay for what Payday spends on its users' behalf: storage for streams, USDC 
 | Web app (`web/`) | **Done** — landing page, employer and worker dashboards, backup and restore, move money out |
 | 1Click cash-out | **Quotes done** — live mainnet quotes on testnet; real swaps need the mainnet deploy |
 | CSV export | **Done** — per-stream accountant export |
-| Security review | **Done, three independent reviews** — see [AUDIT.md](AUDIT.md); every finding fixed or accepted except the deploy-day steps it lists |
+| Security review | **Done, three rounds of security review** (AI-assisted, not a third-party audit) — see [AUDIT.md](AUDIT.md); every finding fixed or accepted except the deploy-day steps it lists |
 | Hosted demo | **Done** — https://paydayhq.vercel.app (testnet), redeployed from `main` on every push |
 | Mainnet deployment | Not started: the deploy-day steps in AUDIT.md (`scripts/handover.sh`) and a re-review come first |
 
