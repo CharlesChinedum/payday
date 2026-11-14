@@ -51,7 +51,7 @@ jobs:
         run: cargo near build reproducible-wasm
       - name: Code hash to compare with the deployed contract's code_hash
         run: echo "code_hash $(scripts/code_hash.py contract/target/near/payday.wasm)" | tee -a "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: payday-wasm-${{ github.sha }}
           path: contract/target/near/payday.wasm
