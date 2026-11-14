@@ -409,13 +409,15 @@ async fn fixed_review3_m1_failed_payouts_never_lose_usdc_near_the_reserve() -> a
         let sender = env.account_with(5 * USDC).await?;
         let receiver = ghost("m1", i);
         let fees_before = env.fees_collected().await?;
-        env.transfer_call(
-            &sender,
-            5 * USDC,
-            json!({ "send_to": receiver }).to_string(),
-            FUNDING_GAS,
-        )
-        .await?;
+        // Success or refund are both fine here; what matters is where the USDC ends up.
+        let _outcome = env
+            .transfer_call(
+                &sender,
+                5 * USDC,
+                json!({ "send_to": receiver }).to_string(),
+                FUNDING_GAS,
+            )
+            .await?;
         let refunded = env.usdc_of(sender.id()).await?;
         let owed = env.owed_of(sender.id()).await?;
         let delivered = env.usdc_of(&receiver).await.unwrap_or(0);
