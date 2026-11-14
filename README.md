@@ -2,7 +2,7 @@
 
 Payroll in USDC that streams to workers every second. Workers withdraw whenever they like, pay no gas, and can cash out to USDC or USDT on another chain.
 
-**Live demo (NEAR testnet): https://payday-near-eight.vercel.app** — no wallet, no NEAR and no sign-up needed.
+**Live demo (NEAR testnet): https://paydayhq.vercel.app** — no wallet, no NEAR and no sign-up needed.
 
 Built for NEAR HACKATHON 2026, track **Real-World Money** (`realworld`).
 
@@ -58,7 +58,7 @@ Fees pay for what Payday spends on its users' behalf: storage for streams, USDC 
 | 1Click cash-out | **Quotes done** — live mainnet quotes on testnet; real swaps need the mainnet deploy |
 | CSV export | **Done** — per-stream accountant export |
 | Security review | **Done, three independent reviews** — see [AUDIT.md](AUDIT.md); every finding fixed or accepted except the deploy-day steps it lists |
-| Hosted demo | **Done** — https://payday-near-eight.vercel.app (testnet), redeployed from `main` on every push |
+| Hosted demo | **Done** — https://paydayhq.vercel.app (testnet), redeployed from `main` on every push |
 | Mainnet deployment | Not started: the deploy-day steps in AUDIT.md (`scripts/handover.sh`) and a re-review come first |
 
 ## Live on testnet
@@ -77,7 +77,7 @@ The testnet contract started as version 1.0.0 and was upgraded in place to 2.0.0
 
 ### 0. Use the hosted demo
 
-Open https://payday-near-eight.vercel.app.
+Open https://paydayhq.vercel.app.
 
 1. Go to **My pay** and copy your account id.
 2. Go to **Run payroll**, click **Get 5,000 test USDC**, then **Add my worker account** and **Fund payroll**. The toast says "Funded 1 worker".
@@ -89,14 +89,14 @@ Open https://payday-near-eight.vercel.app.
 To check a deployment without clicking, run the smoke test. It plays both roles with fresh keys, then replays the attacks from the security review and checks each is refused:
 
 ```bash
-cd web && pnpm install && pnpm smoke https://payday-near-eight.vercel.app
+cd web && pnpm install && pnpm smoke https://paydayhq.vercel.app
 ```
 
 You should see ✓ lines for the faucet, both accounts, funding, a withdrawal, a send, and eleven refused attacks, then `PASS`.
 
 ### 0b. Pay from a DAO
 
-Open https://payday-near-eight.vercel.app/dao?dao=payday-demo.sputnikv2.testnet. This demo DAO pays two contributors through Payday: proposal 0 was drafted on this page, submitted ([`28cPowAF…`](https://testnet.nearblocks.io/txns/28cPowAFVD3HNkMN3BCv7fR3eJG3rQ6Cv1PJdfXgZd8R)) and passed by both council members; the passing vote ([`HUCZYyax…`](https://testnet.nearblocks.io/txns/HUCZYyaxNbrh1eSmSKaXfzfLC3rAC18LnJk3uWg5pzo8)) moved 1,000.02 USDC from the DAO to Payday and opened streams #10 and #11 with the DAO as employer. Any other testnet Sputnik DAO works the same way.
+Open https://paydayhq.vercel.app/dao?dao=payday-demo.sputnikv2.testnet. This demo DAO pays two contributors through Payday: proposal 0 was drafted on this page, submitted ([`28cPowAF…`](https://testnet.nearblocks.io/txns/28cPowAFVD3HNkMN3BCv7fR3eJG3rQ6Cv1PJdfXgZd8R)) and passed by both council members; the passing vote ([`HUCZYyax…`](https://testnet.nearblocks.io/txns/HUCZYyaxNbrh1eSmSKaXfzfLC3rAC18LnJk3uWg5pzo8)) moved 1,000.02 USDC from the DAO to Payday and opened streams #10 and #11 with the DAO as employer. Any other testnet Sputnik DAO works the same way.
 
 1. You see the DAO's USDC, the salaries it pays, who votes and the vote threshold.
 2. Add contributors and click **Draft proposal**. You get a ready-to-run NEAR CLI command that submits it with the DAO's bond.
