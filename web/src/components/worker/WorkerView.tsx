@@ -14,7 +14,7 @@ import { MAX_NOTE_LENGTH, parseRequest, requestCardPath, requestPath, requestSum
 import { WaitingAnimation } from "../animations";
 import { ActivityLog, Toasts } from "../feedback";
 import { ArrowUpRightIcon } from "../icons";
-import { BackupBanner, KeyBackup } from "../KeyBackup";
+import { BackupBanner, KeyBackup, MissingKey } from "../KeyBackup";
 import { CountAmount, LiveAmount } from "../LiveAmount";
 import { CurrencyPicker, LocalAmount, RateNote } from "../LocalCurrency";
 import { MoveMoney } from "../MoveMoney";
@@ -305,7 +305,10 @@ export function WorkerView() {
   const backupCard = useRef<HTMLDivElement>(null);
 
   if (account.status === "loading") return <WorkerSkeleton />;
-  if (account.status === "error") return <Notice tone="error">{account.error}</Notice>;
+  if (account.status === "error") {
+    if (account.missingAccount) return <MissingKey role="worker" accountId={account.missingAccount} />;
+    return <Notice tone="error">{account.error}</Notice>;
+  }
 
   const { key } = account;
   const mine = ledger.streams.filter((s) => s.worker === account.accountId);

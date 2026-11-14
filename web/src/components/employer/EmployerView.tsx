@@ -13,7 +13,7 @@ import { parseRequest, requestDraft, requestSummary, type PayRequest } from "@/l
 import { WaitingAnimation } from "../animations";
 import { ActivityLog, Toasts } from "../feedback";
 import { DownloadIcon } from "../icons";
-import { BackupBanner, KeyBackup } from "../KeyBackup";
+import { BackupBanner, KeyBackup, MissingKey } from "../KeyBackup";
 import { CountAmount } from "../LiveAmount";
 import { MoveMoney } from "../MoveMoney";
 import { ratePerDay, statusOf } from "../StreamMath";
@@ -46,7 +46,7 @@ function RequestNotice({ request }: { request: PayRequest }) {
   return (
     <Notice tone="info">
       <span className="num break-all">{request.worker}</span> asked to be paid {requestSummary(request)}
-      {request.note && <> for &ldquo;{request.note}&rdquo;</>}. It is filled in below, from today. Anyone can make a
+      {request.note && <> for &ldquo;{request.note}&rdquo;</>}. It is filled in below, from 00:00 UTC tomorrow. Anyone can make a
       request link, so check the account with the person before you fund it.
     </Notice>
   );
@@ -77,7 +77,10 @@ export function EmployerView() {
   const requestKey = request ? params.toString() : "";
 
   if (account.status === "loading") return <EmployerSkeleton />;
-  if (account.status === "error") return <Notice tone="error">{account.error}</Notice>;
+  if (account.status === "error") {
+    if (account.missingAccount) return <MissingKey role="employer" accountId={account.missingAccount} />;
+    return <Notice tone="error">{account.error}</Notice>;
+  }
 
   const { key } = account;
   const mine = ledger.streams.filter((s) => s.employer === account.accountId);

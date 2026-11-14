@@ -1,5 +1,5 @@
 import { shortId } from "@/lib/address";
-import { daysText, parseRequest, requestAmount } from "@/lib/request";
+import { daysText, parseRequest, requestAmount, requestCardPath } from "@/lib/request";
 import { BRAND_CARD, CARD_CACHE, limitCards, renderCard } from "@/lib/server/card";
 
 /**
@@ -9,8 +9,12 @@ import { BRAND_CARD, CARD_CACHE, limitCards, renderCard } from "@/lib/server/car
 export async function GET(req: Request) {
   const limited = await limitCards(req);
   if (limited) return limited;
-  const request = parseRequest(new URL(req.url).searchParams);
+  const url = new URL(req.url);
+  const request = parseRequest(url.searchParams);
   if (!request) return renderCard(BRAND_CARD, req, CARD_CACHE.fallback);
+  // One URL per card, so extra or reordered parameters cannot skip the edge cache.
+  const canonical = requestCardPath(request);
+  if (`${url.pathname}${url.search}` !== canonical) return Response.redirect(new URL(canonical, url), 308);
   return renderCard(
     {
       kicker: "PAYMENT REQUEST · PAYDAY",

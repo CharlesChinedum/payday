@@ -22,13 +22,8 @@ export function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    {
-      // Pages only: API routes, build files and images get their own fixed policy.
-      source: "/((?!api/|_next/static|_next/image|favicon.ico).*)",
-      missing: [
-        { type: "header", key: "next-router-prefetch" },
-        { type: "header", key: "purpose", value: "prefetch" },
-      ],
-    },
+    // Every page request, prefetches included; API routes, build files and images get their
+    // own fixed policy.
+    "/((?!api/|_next/static|_next/image|favicon.ico).*)",
   ],
 };

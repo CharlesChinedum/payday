@@ -14,7 +14,7 @@ const MAX_BODY_BYTES = 12 * 1024;
 const RELAY_TIMEOUT_MS = 40_000;
 const perIp = rateLimiter({ id: "relay-ip", label: "relay", limit: 30, windowMs: 60_000 });
 const perSender = rateLimiter({ id: "relay-sender", label: "relay", limit: 20, windowMs: 60_000 });
-/** Every instance together: a ceiling on what valid, signed requests can cost per hour. */
+/** Every instance together: a ceiling on relays the relayer actually pays for, per hour. */
 const overall = rateLimiter({ id: "relay-all", label: "relay", limit: 2_000, windowMs: 60 * 60_000 });
 const emitters = { payday: config.payday, nep141: config.usdc };
 /**
@@ -50,14 +50,18 @@ export function POST(req: Request) {
 
     // Counted only now, so nobody can use up another account's allowance.
     await perSender(summary.senderId);
-    await overall("all");
-    if (!(await inFlight.acquire(summary.senderId))) {
-      throw new HttpError(409, "Your previous request is still being sent; wait a moment");
-    }
+    // One at a time per sender, and per stream: an employer and a worker cancelling the same
+    // stream together would both pass the pre-flight, and the second would fail on-chain.
+    const locks = [summary.senderId, ...("streamId" in verdict.call ? [`stream:${verdict.call.streamId}`] : [])];
+    const held: string[] = [];
     try {
+      for (const key of locks) {
+        if (!(await inFlight.acquire(key))) throw new HttpError(409, "A request for this is still being sent; wait a moment");
+        held.push(key);
+      }
       return await relay(summary, verdict.call, signed);
     } finally {
-      await inFlight.release(summary.senderId);
+      for (const key of held) await inFlight.release(key);
     }
   });
 }
@@ -65,6 +69,9 @@ export function POST(req: Request) {
 /** Pre-flights the delegate, then submits it and pays for it. */
 async function relay(summary: DelegateSummary, call: SponsoredCall, signed: SignedDelegate): Promise<Response> {
   await preflight(summary, call);
+  // Counted only for requests the relayer will pay for, so throwaway keys that fail the
+  // pre-flight cannot use up everyone's budget (review 3, S-1).
+  await overall("all");
 
   const outcome = await spend((relayer) =>
     withTimeout<TxOutcome | null>(

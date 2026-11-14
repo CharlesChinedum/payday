@@ -70,7 +70,9 @@ describe("preflight: the delegate", () => {
 
   it("refuses replays, expired, long-lived and out-of-range nonces", async () => {
     await expect(run(withdraw(null), delegate({ nonce: 5n }))).rejects.toThrow("already used");
-    await expect(run(withdraw(null), delegate({ maxBlockHeight: 1_000n }))).rejects.toThrow("expired");
+    await expect(run(withdraw(null), delegate({ maxBlockHeight: 1_000n }))).rejects.toThrow("expires too soon");
+    // Review 3, S-2: one that would expire before its receipt runs is refused too.
+    await expect(run(withdraw(null), delegate({ maxBlockHeight: 1_002n }))).rejects.toThrow("expires too soon");
     await expect(run(withdraw(null), delegate({ maxBlockHeight: 1_601n }))).rejects.toThrow("too long");
     await expect(run(withdraw(null), delegate({ nonce: 1_000n * 1_000_000n }))).rejects.toThrow("nonce is too large");
     chain.keyNonce = null;
@@ -122,8 +124,8 @@ describe("preflight: cancel and fund", () => {
     await expect(run({ kind: "cancel", streamId: 1 })).resolves.toBeUndefined();
     chain.streams.set(1, stream({ worker: BOB, employer: BOB }));
     await expect(run({ kind: "cancel", streamId: 1 })).rejects.toThrow("Only the employer or worker");
-    chain.streams.set(1, stream({ stop: now() - 1 }));
-    await expect(run({ kind: "cancel", streamId: 1 })).rejects.toThrow("already ended");
+    chain.streams.set(1, stream({ stop: now() + 30 }));
+    await expect(run({ kind: "cancel", streamId: 1 })).rejects.toThrow("ends within a minute");
   });
 
   const fund = (s: Partial<{ worker: string; amount: bigint; start: number; stop: number }> = {}): SponsoredCall => {

@@ -6,6 +6,11 @@ import { HttpError } from "./http";
 
 /** The longest a delegate may stay valid, in blocks (about ten minutes). */
 const MAX_DELEGATE_BLOCKS = 600n;
+/**
+ * The shortest: a delegate that expires before its receipt runs fails on-chain after the
+ * relayer has paid, without using up its nonce, so it could be replayed at no cost.
+ */
+const MIN_DELEGATE_BLOCKS = 30n;
 /** NEAR rejects a nonce at or above block height × 10^6; such a delegate would fail on-chain. */
 const NONCE_RANGE = 1_000_000n;
 /** The contract's stream bounds, checked here so a funding that would be refunded is never paid for. */
@@ -31,7 +36,7 @@ export async function preflight(d: DelegateSummary, call: SponsoredCall): Promis
   if (keyNonce === null) return refuse("This account is not set up yet");
   if (d.nonce <= keyNonce) return refuse("This request was already used; sign it again");
   if (d.nonce >= height * NONCE_RANGE) return refuse("This request's nonce is too large");
-  if (d.maxBlockHeight <= height) return refuse("This request has expired; sign it again");
+  if (d.maxBlockHeight < height + MIN_DELEGATE_BLOCKS) return refuse("This request expires too soon; sign it again");
   if (d.maxBlockHeight > height + MAX_DELEGATE_BLOCKS) return refuse("This request is valid for too long");
 
   await CHECKS[call.kind](d.senderId, call as never);
@@ -80,7 +85,8 @@ const CHECKS: { [K in SponsoredCall["kind"]]: Check<K> } = {
     const stream = await getStream(call.streamId);
     if (!stream) return refuse("Stream not found");
     if (sender !== stream.employer && sender !== stream.worker) return refuse("Only the employer or worker can cancel");
-    if (nowSecs() >= stream.stop) return refuse("This stream has already ended");
+    // Chain time can pass `stop` before the call runs; the contract would then reject it.
+    if (nowSecs() >= stream.stop - CLOCK_SLACK_SECS) return refuse("This stream has ended or ends within a minute");
   },
 
   async fund(sender, call) {

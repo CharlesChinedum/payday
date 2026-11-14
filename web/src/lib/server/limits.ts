@@ -18,7 +18,8 @@ const store = (() => {
 
 export const sharedLimitsEnabled = store !== null;
 
-let warned = false;
+const WARN_EVERY_MS = 60_000;
+let lastWarning = 0;
 
 /** Runs Redis commands in one round trip; null if the store is missing or failing. */
 async function redis(commands: (string | number)[][]): Promise<unknown[] | null> {
@@ -39,8 +40,10 @@ async function redis(commands: (string | number)[][]): Promise<unknown[] | null>
   } catch (e) {
     // Degrade to per-instance limits rather than refuse everyone; the relayer balance
     // floor still stops all spending.
-    if (!warned) console.error("[limits] shared store unavailable, using per-instance limits", e);
-    warned = true;
+    if (Date.now() - lastWarning > WARN_EVERY_MS) {
+      lastWarning = Date.now();
+      console.error("[limits] shared store unavailable, using per-instance limits", e);
+    }
     return null;
   }
 }
@@ -83,17 +86,26 @@ export interface Limit {
  */
 export function rateLimiter({ id, label, limit, windowMs }: Limit) {
   const local = memoryWindow(windowMs);
+  /** Keys the shared store already refused this window: refused here without asking again. */
+  const blocked = new Map<string, number>();
   const refuse = () => new HttpError(429, `Too many ${label} requests; try again shortly`);
 
   return async (rawKey: string): Promise<void> => {
     const key = rawKey.slice(0, MAX_KEY_LENGTH);
     if (local(key) > limit) throw refuse();
-    const shared = `rl:${id}:${Math.floor(Date.now() / windowMs)}:${key}`;
-    const replies = await redis([
-      ["INCR", shared],
-      ["PEXPIRE", shared, windowMs * 2],
-    ]);
-    if (replies && Number(replies[0]) > limit) throw refuse();
+    const window = Math.floor(Date.now() / windowMs);
+    if (blocked.get(key) === window) throw refuse();
+    const shared = `rl:${id}:${window}:${key}`;
+    // One command per check; the expiry is set once, by the first hit of the window.
+    const replies = await redis([["INCR", shared]]);
+    if (!replies) return;
+    const count = Number(replies[0]);
+    if (count === 1) await redis([["PEXPIRE", shared, windowMs * 2]]);
+    if (count > limit) {
+      if (blocked.size >= MAX_KEYS) blocked.clear();
+      blocked.set(key, window);
+      throw refuse();
+    }
   };
 }
 

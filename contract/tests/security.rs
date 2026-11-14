@@ -121,8 +121,11 @@ async fn fixed_m01_settled_streams_are_deleted() -> anyhow::Result<()> {
     assert!(env.stream(1).await?.is_null() && env.stream(25).await?.is_null());
     assert_eq!(env.stream_count_of(sink.id()).await?, 0);
     assert_eq!(env.stream_count_of(employer.id()).await?, 0);
+    // Nothing per stream. What remains is the worker's one `owed` entry, kept since review 3
+    // (M-1) so a failed payout never needs new storage: one per account, not per stream.
+    let owed_entry = 61 + sink.id().as_str().len() as u64;
     assert!(
-        storage_after <= storage_before + 64,
+        storage_after <= storage_before + owed_entry + 64,
         "storage grew {} bytes",
         storage_after - storage_before
     );
@@ -333,5 +336,111 @@ async fn check_books_match_the_token_balance() -> anyhow::Result<()> {
     .await?
     .into_result()?;
     check("a send to Bob").await?;
+    Ok(())
+}
+
+/// Review 3, M-1: failed payouts used to write new `owed` entries with no reserve check,
+/// so they could eat the NEAR reserve, after which a failed payout could not record what
+/// it owed and the USDC was lost. Now a payout reserves that storage up front, and is
+/// refused (the send is refunded) if Payday cannot afford it.
+#[tokio::test]
+async fn fixed_review3_m1_failed_payouts_never_lose_usdc_near_the_reserve() -> anyhow::Result<()> {
+    const BYTE: u128 = 10_000_000_000_000_000_000;
+    const RESERVE_BYTES: i128 = 25_000;
+    let sandbox = near_workspaces::sandbox().await?;
+    let usdc = sandbox
+        .dev_deploy(&std::fs::read("../mock-usdc/target/near/mock_usdc.wasm")?)
+        .await?;
+    usdc.call("new").transact().await?.into_result()?;
+    let root = sandbox.root_account()?;
+    let owner = sandbox.dev_create_account().await?;
+    let wasm = payday_wasm()?;
+    let account = root
+        .create_subaccount("payday")
+        .initial_balance(near_workspaces::types::NearToken::from_yoctonear(
+            (wasm.len() as u128 + 2_000) * BYTE,
+        ))
+        .transact()
+        .await?
+        .into_result()?;
+    let payday = account.deploy(&wasm).await?.into_result()?;
+    payday
+        .call("new")
+        .args_json(json!({ "token": usdc.id(), "owner": owner.id() }))
+        .transact()
+        .await?
+        .into_result()?;
+    owner
+        .call(usdc.id(), "storage_deposit")
+        .args_json(json!({ "account_id": payday.id(), "registration_only": true }))
+        .deposit(near_workspaces::types::NearToken::from_yoctonear(
+            REGISTRATION_YOCTO,
+        ))
+        .transact()
+        .await?
+        .into_result()?;
+    let env = Env {
+        sandbox,
+        usdc,
+        payday,
+        owner,
+    };
+    let free_bytes = || async {
+        let a = env.payday.view_account().await?;
+        anyhow::Ok(
+            (a.balance.as_yoctonear() as i128 - a.storage_usage as i128 * BYTE as i128)
+                / BYTE as i128,
+        )
+    };
+    // Just above the reserve: room for one `owed` entry, not for a registration.
+    let top_up = (RESERVE_BYTES + 160 - free_bytes().await?) as u128 * BYTE;
+    root.transfer_near(
+        env.payday.id(),
+        near_workspaces::types::NearToken::from_yoctonear(top_up),
+    )
+    .await?
+    .into_result()?;
+
+    // Fresh senders send to receivers Payday cannot afford to register. The first payout
+    // fails into the sender's `owed`; later ones are refused up front and refunded. Either
+    // way every unit is with the sender, owed to them, with the receiver, or in fees.
+    let mut outcomes = Vec::new();
+    for i in 0..6 {
+        let sender = env.account_with(5 * USDC).await?;
+        let receiver = ghost("m1", i);
+        let fees_before = env.fees_collected().await?;
+        // Success or refund are both fine here; what matters is where the USDC ends up.
+        let _outcome = env
+            .transfer_call(
+                &sender,
+                5 * USDC,
+                json!({ "send_to": receiver }).to_string(),
+                FUNDING_GAS,
+            )
+            .await?;
+        let refunded = env.usdc_of(sender.id()).await?;
+        let owed = env.owed_of(sender.id()).await?;
+        let delivered = env.usdc_of(&receiver).await.unwrap_or(0);
+        let fees = env.fees_collected().await? - fees_before;
+        assert_eq!(
+            refunded + owed + delivered + fees,
+            5 * USDC,
+            "send {i}: USDC unaccounted for"
+        );
+        assert!(
+            free_bytes().await? >= RESERVE_BYTES,
+            "send {i}: the reserve was eaten"
+        );
+        outcomes.push((refunded, owed, delivered));
+    }
+    println!("M-1 outcomes (refunded, owed, delivered): {outcomes:?}");
+    assert!(
+        outcomes.iter().any(|o| o.1 == 5 * USDC),
+        "the failure path was exercised"
+    );
+    assert!(
+        outcomes.iter().any(|o| o.0 == 5 * USDC),
+        "the up-front refusal was exercised"
+    );
     Ok(())
 }

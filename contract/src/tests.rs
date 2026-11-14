@@ -419,6 +419,81 @@ fn unregistered_receiver_pays_the_registration_fee() {
     assert_eq!(c.config().fees_collected.0, FEE, "booked only once paid");
 }
 
+// ---------- review 3 ----------
+
+#[test]
+fn a_payout_reserves_the_storage_its_failure_would_need() {
+    // M-1: a failed payout credits `owed`; that callback must never need new storage.
+    let mut c = setup();
+    set_ctx(ALICE, STOP);
+    assert!(!c.owed.contains_key(&acc(ALICE)));
+    c.withdraw(1, None, None);
+    assert!(
+        c.owed.contains_key(&acc(ALICE)),
+        "created before the payout is sent"
+    );
+    assert_eq!(c.owed_of(acc(ALICE)).0, 0);
+
+    // The stream is pruned while the payout is in flight, then the transfer fails: the
+    // amount lands in the entry that already exists.
+    assert_eq!(c.prune(vec![1]), 1);
+    set_callback(STOP, RICH, PromiseResult::Failed);
+    c.on_paid(
+        acc(ALICE),
+        acc(ALICE),
+        U128(DEPOSIT),
+        U128(PAY_FEE),
+        from_stream(1),
+        Err(PromiseError::Failed),
+    );
+    assert_eq!(c.owed_of(acc(ALICE)).0, DEPOSIT);
+
+    // Claiming zeroes the entry instead of deleting it, so a failed claim is covered too.
+    set_ctx(ALICE, STOP);
+    c.claim_owed(None);
+    assert!(c.owed.contains_key(&acc(ALICE)));
+    assert_eq!(c.owed_of(acc(ALICE)).0, 0);
+}
+
+#[test]
+#[should_panic(expected = "Payday is at storage capacity")]
+fn a_payout_that_would_eat_the_reserve_is_refused_up_front() {
+    let mut c = setup();
+    // Free NEAR just under the reserve: a new `owed` entry cannot be paid for.
+    testing_env!(ctx(ALICE, STOP, just_above_storage() - 1).build());
+    c.withdraw(1, None, None);
+}
+
+#[test]
+fn prune_clears_a_finished_stream_whose_remainder_cannot_pay_its_fee() {
+    // L-1: a remainder at or below the payout fee can never be withdrawn or cancelled.
+    let mut c = setup();
+    set_ctx(ALICE, STOP - 1);
+    let dust = 5_000;
+    c.withdraw(1, Some(U128(DEPOSIT - dust - 1_000_000)), None);
+    set_ctx(ALICE, STOP);
+    c.withdraw(1, Some(U128(1_000_000)), None);
+    assert_eq!(stream(&c, 1).withdrawable.0, dust);
+    let fees = c.config().fees_collected.0;
+    assert_eq!(c.prune(vec![1]), 1);
+    assert!(c.get_stream(1).is_none());
+    assert_eq!(c.config().fees_collected.0, fees + dust);
+}
+
+#[test]
+#[should_panic(expected = "Amount does not cover the payout fee")]
+fn a_send_must_cover_the_payout_fee() {
+    let mut c = new_contract();
+    set_ctx(OWNER, START);
+    c.set_fees(U128(FEE), U128(REG_FEE), U128(MIN_STREAM_AMOUNT));
+    set_ctx(USDC, START);
+    c.ft_on_transfer(
+        acc(EMPLOYER),
+        U128(MIN_STREAM_AMOUNT),
+        json!({ "send_to": BOB }).to_string(),
+    );
+}
+
 #[test]
 fn payday_pays_for_a_registration_only_once() {
     // I-07: Circle USDC refunds an unregistering account its deposit, so a second paid
@@ -1120,7 +1195,7 @@ fn migrates_the_2_0_0_layout_and_keeps_its_settings() {
 
     let c = Payday::migrate(None);
     let config = c.config();
-    assert_eq!(config.version, "2.1.0");
+    assert_eq!(config.version, VERSION);
     assert_eq!(config.owner, acc(OWNER));
     assert!(config.paused);
     assert_eq!(

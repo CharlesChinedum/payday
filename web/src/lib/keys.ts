@@ -16,6 +16,20 @@ export interface BrowserKey {
 export type Backup = { kind: "phrase"; words: string[] } | { kind: "key"; secret: string };
 
 /**
+ * This browser had an account for the role, but its key is gone (site data partly cleared,
+ * or the key store lost). Creating a new account would hide the old one, so the user is
+ * asked to restore it instead.
+ */
+export class MissingKeyError extends Error {
+  readonly accountId: string;
+
+  constructor(accountId: string) {
+    super(`This browser no longer has the key for account ${accountId}. Restore it from its recovery phrase.`);
+    this.accountId = accountId;
+  }
+}
+
+/**
  * Where keys live (H-05). Each role's signing key is a non-extractable WebCrypto Ed25519
  * key in IndexedDB: pages can ask the browser to sign with it, but no script, extension
  * or storage dump can read it out. The recovery phrase is kept in localStorage only until
@@ -207,14 +221,29 @@ async function loadOrCreate(role: Role): Promise<BrowserKey> {
     if (read(accountItem(role)) !== key.accountId) localStorage.setItem(accountItem(role), key.accountId);
     return key;
   }
-  // Migrate a key from the old layout, keeping its phrase (or secret) only if not yet backed up.
+  // Migrate a key from the old layout. Its phrase (or secret) is kept until the user confirms
+  // the backup again: the old "I have saved it" came with no warning that it would be deleted.
   const legacy = read(legacyKeyItem(role));
   if (legacy) {
     const keyPair = KeyPair.fromString(legacy as KeyPairString);
-    return save(role, keyPair, read(legacyPhraseItem(role)) ?? keyPair.toString(), isBackedUp(role));
+    return save(role, keyPair, read(legacyPhraseItem(role)) ?? keyPair.toString(), false);
   }
+  // The key record is gone but this browser knew an account. If its phrase is still waiting
+  // for backup, rebuild the same key from it; otherwise refuse rather than start a new account.
+  const known = read(accountItem(role));
+  const pending = read(pendingBackupItem(role));
+  if (pending) {
+    const { keyPair } = parseBackup(pending);
+    if (!known || accountIdOf(keyPair.getPublicKey()) === known) return save(role, keyPair, pending, false);
+  }
+  if (known) throw new MissingKeyError(known);
   const { seedPhrase, keyPair } = generateSeedPhrase();
   return save(role, keyPair, seedPhrase, false);
+}
+
+/** Asks the browser not to evict this site's storage under pressure; best effort. */
+function persistStorage() {
+  if (typeof navigator !== "undefined") navigator.storage?.persist?.().catch(() => {});
 }
 
 /**
@@ -227,6 +256,7 @@ export async function loadOrCreateKey(role: Role): Promise<BrowserKey> {
   } catch {
     throw new Error("This browser blocks local storage, so Payday cannot keep your key.");
   }
+  persistStorage();
   if (typeof navigator !== "undefined" && navigator.locks) {
     return navigator.locks.request(`payday-key-${role}`, () => loadOrCreate(role));
   }

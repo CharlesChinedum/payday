@@ -20,9 +20,12 @@ type Load =
   | { status: "error"; error: string }
   | { status: "ready"; streams: StreamRecord[]; names: Record<string, string>; readAt: number };
 
-/** Employers that are DAOs get their DAO's name; anything else keeps its account id. */
+/** Accounts made by the Sputnik DAO factory; any other contract could claim any name. */
+const SPUTNIK_DAO = /\.(sputnik-dao\.near|sputnikv2\.testnet)$/;
+
+/** Sputnik DAO employers get their DAO's name as a second line; the account id stays the label. */
 async function employerNames(streams: StreamRecord[]): Promise<Record<string, string>> {
-  const employers = [...new Set(streams.map((s) => s.employer))];
+  const employers = [...new Set(streams.map((s) => s.employer))].filter((e) => SPUTNIK_DAO.test(e));
   const results = await Promise.allSettled(employers.map((e) => view<{ name?: string }>(e, "get_config")));
   const names: Record<string, string> = {};
   results.forEach((r, i) => {
@@ -191,8 +194,8 @@ function Payslip(props: {
               {lines.map((l) => (
                 <tr key={l.stream.id} className="border-t border-paper-rule/60 align-top">
                   <td className="py-2 pr-2">
-                    <span className="block">{state.names[l.stream.employer] ?? shortId(l.stream.employer)}</span>
-                    {state.names[l.stream.employer] && <span className="num block text-xs opacity-70">{shortId(l.stream.employer)}</span>}
+                    <span className="num block break-all">{shortId(l.stream.employer)}</span>
+                    {state.names[l.stream.employer] && <span className="block text-xs opacity-70">{state.names[l.stream.employer]}</span>}
                   </td>
                   <td className="num py-2 pr-2">
                     #{l.stream.id}

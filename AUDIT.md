@@ -80,11 +80,38 @@ The fixed code (`6f924d1`) was reviewed again with the same method. It confirmed
 
 Tests also hardened: the recovery-phrase typo test is now deterministic (it failed about 1 run in 16), and CI runs the sandbox integration and security tests.
 
-**Still open before mainnet:** running `scripts/handover.sh` on deploy day; connecting the shared rate-limit store in production; and re-running this review on the fixed commit, as planned below.
+**Still open before mainnet:** running `scripts/handover.sh` on deploy day (see the third review below for everything else).
 
 ## Closing the remaining items (14 November 2026)
 
 H-04, H-05, I-01, I-07 and the M-03 tooling were closed on branch `audit-close`, checked with unit and sandbox tests, a production build in a browser, and the smoke test (both roles and every replayed attack) against that build. The I-07 answer comes from running the real mainnet USDC code (wasm `code_hash DVJx7F3dHEHJYwpYPwXHu8K9Uo7h4kXFcALucY5oNX8q`, Circle's FiatToken on near-contract-standards 4.1.1) in a local sandbox; nothing was sent on mainnet. Contract 2.1.0 adds the I-07 fix and migrates 2.0.0 state in place.
+
+## Third review (14 November 2026)
+
+The fixed code (`607fc27`, contract 2.1.0) was reviewed again from scratch by three independent reviewers, one each for the contract, the server and the browser. They were given the code, not this document, and read it only afterwards to avoid repeating accepted items. Every finding was then checked against the code by the author's assistant before it was fixed. Proofs of concept ran in a local sandbox and in unit tests; against the live site the reviewers sent only a few harmless requests.
+
+No path to steal USDC was found. One contract bug could lose a user's USDC once the contract's NEAR reserve was used up, and one relayer bug let anyone lock every user out of the relayer for an hour. Both are fixed in contract 2.2.0 and the web app.
+
+| ID | Finding | Severity | Status | What changed | Evidence |
+|---|---|---|---|---|---|
+| C-M1 | Failed payouts wrote new `owed` entries with no reserve check, so they could use up the NEAR reserve; after that, a failed payout could not record what it owed and the USDC was lost | Medium | **Fixed in 2.2.0** | A payout creates the account's `owed` entry before it is sent, checking the reserve; the failure path never needs new storage. Entries are zeroed, not deleted, so concurrent payouts stay covered. A payout Payday cannot afford is refused up front (a send is refunded). | `a_payout_reserves_the_storage_its_failure_would_need`; sandbox `fixed_review3_m1_…` (fails on 2.1.0: "the reserve was eaten") |
+| C-L1 | A finished stream with a remainder below the payout fee could never be withdrawn, cancelled or pruned | Low | **Fixed in 2.2.0** | `prune` moves such a remainder to fees and deletes the stream. `owed` dust below the fee stays claimable once topped up (accepted). | `prune_clears_a_finished_stream_whose_remainder_cannot_pay_its_fee` |
+| C-I1 | `registered` entries were not counted in the registration check; a payout at the 1 USDC maximum fee could transfer nothing | Info | **Fixed in 2.2.0** | The registration check includes the new entry; sends and registered payouts must exceed the fee. 2.1.0 state migrates unchanged. | `a_send_must_cover_the_payout_fee` |
+| S-1 | Throwaway keys refused at pre-flight still counted towards the global relay ceiling: two IPs could lock everyone out for an hour | High (availability) | **Fixed** | The ceiling counts only requests that passed the pre-flight, just before the relayer pays. | `relay/route.test.ts` (2,000 refused requests, the next user is still served; fails on the old order) |
+| S-2 | A delegate signed to expire within a block or two passed the pre-flight, then failed on-chain at the relayer's cost without using its nonce | Medium | **Fixed** | Delegates must stay valid for at least 30 more blocks. | `preflight.test.ts` |
+| S-3 | Upstash failures fall back to per-instance limits; a refused key kept costing a store command per request | Low | **Mitigated** | One command per check, keys already refused are refused locally for the rest of the window, and a fallback is logged every minute. Falling back stays deliberate: a store outage must not stop payroll; the balance floor remains the global stop. | `limits.test.ts` |
+| S-4 | Some calls passed the pre-flight but failed on-chain: a cancel in a stream's last moments, or two parties cancelling one stream at once | Low | **Fixed** | No cancel in a stream's last minute; one relay at a time per stream as well as per sender. Funding at the storage limit is left to the contract (refunded; accepted). | `preflight.test.ts` |
+| S-5 | Extra query parameters skipped the edge cache for preview cards | Low | **Fixed** | Card routes redirect anything but the canonical URL. | live `x-vercel-cache` check |
+| S-6 | IPv4-mapped IPv6 addresses shared one rate-limit key | Info | **Fixed** | They are keyed as the IPv4 address. | `http.test.ts` |
+| B-1 | If the browser lost its key store but kept localStorage, a new account silently replaced the old one and its unsaved phrase | Medium | **Fixed** | The key is rebuilt from a phrase still awaiting backup; otherwise a "Restore your account" screen appears instead of a new account. Storage is marked persistent. | `keys.test.ts`; checked in a browser |
+| B-2 | Request links backdated the stream to 00:00 UTC today, so up to a day's pay was withdrawable the moment it was funded | Medium | **Fixed** | Requests start at 00:00 UTC tomorrow. The payroll form says how much would vest at once whenever a start is in the past. | `request.test.ts`; checked in a browser |
+| B-3 | DAO proposal rows hid who was paid and when, and shortened names could be imitated | Medium | **Fixed** | Each stream is listed with its full account, amount and dates, with a warning while voting if it starts in the past. Only hex ids are ever shortened. | checked in a browser |
+| B-4 | Migrating an old key deleted its phrase if the old "I have saved it" had been clicked, without the new warning | Low | **Fixed** | Migrated accounts keep their phrase until the backup is confirmed again. | `keys.test.ts` |
+| B-5 | Sending to a mistyped named account that does not exist went through | Low | **Fixed** | Named receivers must exist; implicit accounts need not. | — |
+| B-6 | Payslips showed any contract's self-declared name as "(DAO)" | Low | **Fixed** | Only Sputnik factory accounts get a name, under the account id. | — |
+| B-7 | UI claim about key locking; download URL revoked at once; CLI signer unvalidated; prefetch requests without CSP; 1Click's own formatted amount shown | Info | **Fixed** | Wording corrected; revoke delayed; signer validated; the policy covers every page request; the amount shown is the validated one. | `csp.test.ts` |
+
+**Still open before mainnet:** deploy-day steps (`scripts/handover.sh`). Accepted: a fresh account can still be registered once at Payday's cost (I-07); `owed` entries are kept once created (storage Payday pays for, about 0.001 NEAR per account that has been paid out, covered by the payout fee at today's prices).
 
 ## Summary
 

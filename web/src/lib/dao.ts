@@ -1,3 +1,4 @@
+import { isNearAccountId } from "./address";
 import { fundingMsg, type PayrollRow } from "./csv";
 import { formatUsdc } from "./money";
 
@@ -189,7 +190,7 @@ export function proposeCommand(dao: string, args: AddProposalArgs, bondYocto: st
     `near contract call-function as-transaction ${dao} add_proposal`,
     `json-args ${shellQuote(JSON.stringify(args))}`,
     `prepaid-gas '${DAO_PROPOSE_TGAS} Tgas' attached-deposit '${nearAmount(bondYocto)} NEAR'`,
-    `sign-as ${signer || "YOUR_ACCOUNT"} network-config ${network}`,
+    `sign-as ${signerArg(signer)} network-config ${network}`,
   ].join(" \\\n  ");
 }
 
@@ -199,9 +200,12 @@ export function voteCommand(dao: string, id: number, kind: unknown, signer: stri
     `near contract call-function as-transaction ${dao} act_proposal`,
     `json-args ${shellQuote(JSON.stringify({ id, action: "VoteApprove", proposal: kind }))}`,
     `prepaid-gas '${DAO_VOTE_TGAS} Tgas' attached-deposit '0 NEAR'`,
-    `sign-as ${signer || "YOUR_ACCOUNT"} network-config ${network}`,
+    `sign-as ${signerArg(signer)} network-config ${network}`,
   ].join(" \\\n  ");
 }
+
+/** Only a valid account id reaches the command line; anything else becomes a placeholder. */
+const signerArg = (signer: string) => (isNearAccountId(signer) ? signer : "YOUR_ACCOUNT");
 
 /**
  * Who can approve a function-call proposal, from the policy: each role with that

@@ -6,6 +6,12 @@ const { clientIp, ipv6Prefix } = await import("./http");
 const req = (ip: string) => new Request("http://x", { headers: { "x-forwarded-for": ip } });
 
 describe("clientIp (N-03)", () => {
+  it("keys IPv4-mapped IPv6 addresses as the IPv4 address (review 3, S-6)", () => {
+    expect(clientIp(req("::ffff:1.2.3.4"))).toBe("1.2.3.4");
+    expect(clientIp(req("0:0:0:0:0:ffff:5.6.7.8"))).toBe("5.6.7.8");
+    expect(clientIp(req("::ffff:1.2.3.4"))).not.toBe(clientIp(req("::ffff:5.6.7.8")));
+  });
+
   it("keys IPv4 clients by address", () => {
     expect(clientIp(req("203.0.113.7, 10.0.0.1"))).toBe("203.0.113.7");
   });

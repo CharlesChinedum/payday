@@ -1,6 +1,6 @@
 import { isNearAccountId, shortId } from "@/lib/address";
 import { config } from "@/lib/config";
-import { HIDE_AMOUNT, monthOf, monthPeriod, payslipLines, shareCard } from "@/lib/payslip";
+import { HIDE_AMOUNT, monthOf, monthPeriod, payslipCardPath, payslipLines, shareCard } from "@/lib/payslip";
 import { BRAND_CARD, CARD_CACHE, limitCards, renderCard } from "@/lib/server/card";
 import { streamsOf } from "@/lib/server/chain";
 
@@ -17,6 +17,9 @@ export async function GET(req: Request) {
   const nowSecs = Math.floor(Date.now() / 1000);
   const period = monthPeriod(url.searchParams.get("month") ?? monthOf(nowSecs), nowSecs);
   if (!isNearAccountId(worker) || !period) return renderCard(BRAND_CARD, req, CARD_CACHE.fallback);
+  // One URL per card, so extra or reordered parameters cannot skip the edge cache.
+  const canonical = payslipCardPath(worker, period.month, url.searchParams.get("amount") === HIDE_AMOUNT);
+  if (`${url.pathname}${url.search}` !== canonical) return Response.redirect(new URL(canonical, url), 308);
 
   try {
     const lines = payslipLines(await streamsOf(worker), worker, period);

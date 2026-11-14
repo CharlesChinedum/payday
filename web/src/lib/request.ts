@@ -66,12 +66,13 @@ export const requestCardPath = (r: PayRequest) => `/api/og/request?${query(r)}`;
 const isoDate = (secs: number) => new Date(secs * 1000).toISOString().slice(0, 10);
 
 /**
- * The payroll row for a request: from the start of today (UTC) for exactly `days` days, so
- * the dates in the form are whole days and the stream is as long as was asked.
+ * The payroll row for a request: from 00:00 UTC tomorrow for exactly `days` days. Never
+ * backdated, so nothing is withdrawable the moment it is funded, and the dates in the form
+ * are whole days.
  */
 export function requestDraft(r: PayRequest, nowSecs: number): DraftRow {
-  const today = Math.floor(nowSecs / 86_400) * 86_400;
-  return { worker: r.worker, amount: plainAmount(r.amount), start: isoDate(today), end: isoDate(today + r.days * 86_400) };
+  const tomorrow = (Math.floor(nowSecs / 86_400) + 1) * 86_400;
+  return { worker: r.worker, amount: plainAmount(r.amount), start: isoDate(tomorrow), end: isoDate(tomorrow + r.days * 86_400) };
 }
 
 export const daysText = (days: number) => (days === 1 ? "1 day" : `${days} days`);

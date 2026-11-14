@@ -2,7 +2,7 @@
 
 import { useRef, useState, type DragEvent } from "react";
 import { csvToDraftRows, EMPTY_DRAFT_ROW, parseDraftRows, summarizeRows, type DraftRow, type PayrollRow } from "@/lib/csv";
-import { formatUsdc } from "@/lib/money";
+import { formatUsdc, vestedAt } from "@/lib/money";
 import { CloseIcon, PlusIcon, UploadIcon } from "../icons";
 import { Button, Card, TextInput } from "../ui";
 
@@ -107,6 +107,9 @@ export function PayrollComposer(props: {
   const parsed: Parsed = streamFee === null ? { error: "Reading Payday's fees…" } : parseDrafts(drafts, nowSecs, streamFee);
   const untouched = drafts.every((r) => r.worker === "" && r.amount === "");
   const shortfall = "rows" in parsed && parsed.total > balance ? parsed.total - balance : 0n;
+  // A start in the past is allowed (back pay), but whatever has already vested is
+  // withdrawable the moment the payroll is funded, so say how much.
+  const upfront = "rows" in parsed ? parsed.rows.reduce((sum, r) => sum + vestedAt(r.amount, r.start, r.stop, nowSecs), 0n) : 0n;
 
   const updateRow = (row: Draft) => setDrafts((rows) => rows.map((r) => (r.id === row.id ? row : r)));
   const removeRow = (id: number) => setDrafts((rows) => rows.filter((r) => r.id !== id));
@@ -195,6 +198,11 @@ export function PayrollComposer(props: {
           <span className="num">worker,amount,start,end</span>, with amounts like 1000 or 12.50 and dates like 2026-12-01.
         </p>
         {importError && <p className="mt-2 text-sm text-danger">{importError}</p>}
+        {upfront > 0n && (
+          <p className="mt-2 rounded-lg bg-warn-soft px-3 py-2 text-sm">
+            A start date is in the past: {formatUsdc(upfront)} USDC is withdrawable as soon as this is funded.
+          </p>
+        )}
       </div>
 
       <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-5">
