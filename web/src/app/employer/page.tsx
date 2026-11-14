@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { connection } from "next/server";
 import { Suspense } from "react";
 import { EmployerView } from "@/components/employer/EmployerView";
 import { shortId } from "@/lib/address";
@@ -10,7 +9,6 @@ const BASE: Metadata = { title: "Run payroll · Payday" };
 /** A request-to-be-paid link previews as a card with the amount, the period and who is asking. */
 export async function generateMetadata({ searchParams }: PageProps<"/employer">): Promise<Metadata> {
   const params = await searchParams;
-  await connection();
   const query = new URLSearchParams();
   for (const key of ["pay", "amount", "days", "note"]) {
     const value = params[key];
@@ -30,20 +28,11 @@ export async function generateMetadata({ searchParams }: PageProps<"/employer">)
   };
 }
 
-/** Marks the page as request-time on purpose (its metadata reads the query), keeping the shell static. */
-async function Connection() {
-  await connection();
-  return null;
-}
-
 export default function Page() {
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
       <Suspense>
         <EmployerView />
-      </Suspense>
-      <Suspense>
-        <Connection />
       </Suspense>
     </div>
   );

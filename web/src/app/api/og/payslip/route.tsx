@@ -10,7 +10,7 @@ import { streamsOf } from "@/lib/server/chain";
  * `amount=hide` it leaves the figure out. Bad links get the plain Payday card, never an error.
  */
 export async function GET(req: Request) {
-  const limited = limitCards(req);
+  const limited = await limitCards(req);
   if (limited) return limited;
   const url = new URL(req.url);
   const worker = url.searchParams.get("worker")?.trim().toLowerCase() ?? "";

@@ -307,12 +307,12 @@ export function WorkerView() {
   if (account.status === "loading") return <WorkerSkeleton />;
   if (account.status === "error") return <Notice tone="error">{account.error}</Notice>;
 
-  const { keyPair } = account;
+  const { key } = account;
   const mine = ledger.streams.filter((s) => s.worker === account.accountId);
   const busy = pending.length > 0;
 
   async function withdrawOne(streamId: number) {
-    const res = await relayCall(keyPair, config.payday, "withdraw", { stream_id: streamId }, GAS_TGAS.payout);
+    const res = await relayCall(key, config.payday, "withdraw", { stream_id: streamId }, GAS_TGAS.payout);
     report(log.add, res, (o) => {
       const paid = paidOut(o).find((p) => p.source === "stream");
       if (!paid) return { ok: false, text: `Withdrawal did not go through: ${explain(o, "the payout failed")}` };
@@ -403,7 +403,7 @@ export function WorkerView() {
 
       {(mine.length > 0 || ledger.balance > 0n || ledger.owed > 0n) && (
         <MoveMoney
-          keyPair={keyPair}
+          signingKey={key}
           accountId={account.accountId}
           streams={mine}
           balance={ledger.balance}

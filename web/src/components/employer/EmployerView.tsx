@@ -79,7 +79,7 @@ export function EmployerView() {
   if (account.status === "loading") return <EmployerSkeleton />;
   if (account.status === "error") return <Notice tone="error">{account.error}</Notice>;
 
-  const { keyPair } = account;
+  const { key } = account;
   const mine = ledger.streams.filter((s) => s.employer === account.accountId);
   const totals = payrollTotals(mine, now);
   const busy = action !== null;
@@ -107,7 +107,7 @@ export function EmployerView() {
   const fund = (rows: PayrollRow[], total: bigint) =>
     run({ kind: "fund" }, "Funding", false, async () => {
       const args = { receiver_id: config.payday, amount: total.toString(), msg: fundingMsg(rows) };
-      const res = await relayCall(keyPair, config.usdc, "ft_transfer_call", args, GAS_TGAS.funding, ONE_YOCTO);
+      const res = await relayCall(key, config.usdc, "ft_transfer_call", args, GAS_TGAS.funding, ONE_YOCTO);
       // Payday emits one stream_created per stream; if it rejects the payroll the token
       // refunds the whole transfer and there are none.
       const outcome = report(log.add, res, (o) =>
@@ -121,7 +121,7 @@ export function EmployerView() {
 
   const cancel = (streamId: number) =>
     run({ kind: "cancel", streamId }, "Cancel", undefined, async () => {
-      const res = await relayCall(keyPair, config.payday, "cancel", { stream_id: streamId }, GAS_TGAS.payout);
+      const res = await relayCall(key, config.payday, "cancel", { stream_id: streamId }, GAS_TGAS.payout);
       report(log.add, res, (o) => {
         if (eventsNamed(o, "payday", "stream_canceled").length === 0) {
           return { ok: false, text: `Not cancelled: ${explain(o, "Payday did not cancel the stream")}` };
@@ -231,7 +231,7 @@ export function EmployerView() {
 
       {(ledger.balance > 0n || ledger.owed > 0n) && (
         <MoveMoney
-          keyPair={keyPair}
+          signingKey={key}
           accountId={account.accountId}
           streams={[]}
           balance={ledger.balance}

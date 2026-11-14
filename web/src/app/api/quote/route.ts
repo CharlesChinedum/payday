@@ -10,8 +10,8 @@ const QUOTE_TTL_MS = 30 * 60_000;
 const U128 = /^(0|[1-9]\d{0,38})$/;
 /** A dollar-for-dollar quote may not promise more than this share of what goes in. */
 const MAX_OUT_PERCENT = 102n;
-const perIpQuote = rateLimiter("quote", 20, 60_000);
-const perIpStatus = rateLimiter("status", 60, 60_000);
+const perIpQuote = rateLimiter({ id: "quote-ip", label: "quote", limit: 20, windowMs: 60_000 });
+const perIpStatus = rateLimiter({ id: "status-ip", label: "status", limit: 60, windowMs: 60_000 });
 
 interface OneClickQuote {
   quote?: {
@@ -47,7 +47,7 @@ async function upstream(path: string, init?: RequestInit): Promise<{ ok: boolean
  */
 export function POST(req: Request) {
   return handle("quote", async () => {
-    perIpQuote(clientIp(req));
+    await perIpQuote(clientIp(req));
     const body = await readJson(req, 1024);
     const asset = CASH_OUT_ASSETS.find((a) => a.id === body.destination);
     if (!asset) throw new HttpError(400, "Unsupported destination");
@@ -130,7 +130,7 @@ export function POST(req: Request) {
 /** Status of a cash-out by its 1Click deposit address. */
 export function GET(req: Request) {
   return handle("quote-status", async () => {
-    perIpStatus(clientIp(req));
+    await perIpStatus(clientIp(req));
     const depositAddress = new URL(req.url).searchParams.get("depositAddress") ?? "";
     if (!IMPLICIT_ACCOUNT.test(depositAddress)) throw new HttpError(400, "depositAddress must be a NEAR implicit account");
     const { ok, body } = await upstream(`/status?depositAddress=${depositAddress}`);

@@ -420,6 +420,59 @@ fn unregistered_receiver_pays_the_registration_fee() {
 }
 
 #[test]
+fn payday_pays_for_a_registration_only_once() {
+    // I-07: Circle USDC refunds an unregistering account its deposit, so a second paid
+    // registration for the same account would let it farm the deposit.
+    let mut c = setup();
+    set_ctx(ALICE, START + 500);
+    c.withdraw(1, Some(U128(2 * MIN_STREAM_AMOUNT)), None);
+    set_callback(START + 500, RICH, unregistered());
+    drop(c.on_receiver_checked(
+        acc(ALICE),
+        acc(ALICE),
+        U128(2 * MIN_STREAM_AMOUNT),
+        U128(PAY_FEE),
+        from_stream(1),
+    ));
+    assert_eq!(scheduled("storage_deposit")["account_id"], ALICE);
+
+    // Alice unregisters and withdraws again: refused, and the amount goes back to her stream.
+    set_ctx(ALICE, START + 600);
+    let before = stream(&c, 1).withdrawn.0;
+    c.withdraw(1, Some(U128(2 * MIN_STREAM_AMOUNT)), None);
+    set_callback(START + 600, RICH, unregistered());
+    let routed = c.on_receiver_checked(
+        acc(ALICE),
+        acc(ALICE),
+        U128(2 * MIN_STREAM_AMOUNT),
+        U128(PAY_FEE),
+        from_stream(1),
+    );
+    assert!(matches!(routed, PromiseOrValue::Value(false)));
+    assert_eq!(
+        stream(&c, 1).withdrawn.0,
+        before,
+        "credited back to the stream"
+    );
+    assert!(get_logs()
+        .iter()
+        .any(|l| l.contains("payout_failed") && l.contains("registration once")));
+
+    // Once she registers herself, payouts flow again with no registration fee.
+    set_ctx(ALICE, START + 600);
+    c.withdraw(1, Some(U128(2 * MIN_STREAM_AMOUNT)), None);
+    set_callback(START + 600, RICH, registered());
+    let routed = c.on_receiver_checked(
+        acc(ALICE),
+        acc(ALICE),
+        U128(2 * MIN_STREAM_AMOUNT),
+        U128(PAY_FEE),
+        from_stream(1),
+    );
+    assert!(matches!(routed, PromiseOrValue::Promise(_)));
+}
+
+#[test]
 fn fees_must_fit_in_the_payout() {
     // The last 0.015 USDC of a stream: emptying it is allowed, but it cannot cover both fees.
     let mut c = setup();
@@ -1023,6 +1076,62 @@ fn migrates_the_1_0_0_layout_and_keeps_its_data() {
     assert_eq!(c.config().payout_fee.0, DEFAULT_PAYOUT_FEE);
     assert_eq!(stream(&c, 7).withdrawn.0, 3);
     assert_eq!(c.streams_of(acc(ALICE), None, None).len(), 1);
+    assert_eq!(c.owed_of(acc(BOB)).0, 42);
+}
+
+#[derive(BorshSerialize)]
+#[borsh(crate = "near_sdk::borsh")]
+struct V2State {
+    token: AccountId,
+    owner: AccountId,
+    proposed_owner: Option<AccountId>,
+    paused: bool,
+    stream_fee: u128,
+    registration_fee: u128,
+    payout_fee: u128,
+    fees_collected: u128,
+    next_id: u64,
+    streams: LookupMap<u64, Stream>,
+    by_account: LookupMap<AccountId, Vec<u64>>,
+    owed: LookupMap<AccountId, u128>,
+}
+
+#[test]
+fn migrates_the_2_0_0_layout_and_keeps_its_settings() {
+    set_ctx(CONTRACT, START);
+    let mut owed = LookupMap::new(StorageKey::Owed);
+    owed.insert(acc(BOB), 42u128);
+    owed.flush();
+    let old = V2State {
+        token: acc(USDC),
+        owner: acc(OWNER),
+        proposed_owner: Some(acc(BOB)),
+        paused: true,
+        stream_fee: 5_000,
+        registration_fee: 6_000,
+        payout_fee: 7_000,
+        fees_collected: 99,
+        next_id: 12,
+        streams: LookupMap::new(StorageKey::Streams),
+        by_account: LookupMap::new(StorageKey::ByAccount),
+        owed,
+    };
+    env::storage_write(b"STATE", &near_sdk::borsh::to_vec(&old).unwrap());
+
+    let c = Payday::migrate(None);
+    let config = c.config();
+    assert_eq!(config.version, "2.1.0");
+    assert_eq!(config.owner, acc(OWNER));
+    assert!(config.paused);
+    assert_eq!(
+        (
+            config.stream_fee.0,
+            config.registration_fee.0,
+            config.payout_fee.0
+        ),
+        (5_000, 6_000, 7_000)
+    );
+    assert_eq!(config.fees_collected.0, 99);
     assert_eq!(c.owed_of(acc(BOB)).0, 42);
 }
 

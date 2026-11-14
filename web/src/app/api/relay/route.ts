@@ -4,7 +4,7 @@ import { summarizeOutcome, type TxOutcome } from "@/lib/outcome";
 import { checkDelegate, type DelegateSummary, type SponsoredCall } from "@/lib/policy";
 import type { SignedDelegate } from "near-api-js";
 import { HttpError, clientIp, handle, readJson, withTimeout } from "@/lib/server/http";
-import { rateLimiter } from "@/lib/server/limits";
+import { rateLimiter, sharedLock } from "@/lib/server/limits";
 import { preflight } from "@/lib/server/preflight";
 import { spend } from "@/lib/server/relayer";
 
@@ -12,15 +12,17 @@ export const maxDuration = 60;
 
 const MAX_BODY_BYTES = 12 * 1024;
 const RELAY_TIMEOUT_MS = 40_000;
-const perIp = rateLimiter("relay", 30, 60_000);
-const perSender = rateLimiter("relay", 20, 60_000);
+const perIp = rateLimiter({ id: "relay-ip", label: "relay", limit: 30, windowMs: 60_000 });
+const perSender = rateLimiter({ id: "relay-sender", label: "relay", limit: 20, windowMs: 60_000 });
+/** Every instance together: a ceiling on what valid, signed requests can cost per hour. */
+const overall = rateLimiter({ id: "relay-all", label: "relay", limit: 2_000, windowMs: 60 * 60_000 });
 const emitters = { payday: config.payday, nep141: config.usdc };
 /**
- * Senders with a delegate being relayed by this instance. Two parallel copies of one
+ * Senders with a delegate being relayed, across every instance. Two parallel copies of one
  * request would both pass the pre-flight, and the second would fail on-chain at the
  * relayer's cost, so each sender gets one at a time.
  */
-const inFlight = new Set<string>();
+const inFlight = sharedLock("relay", RELAY_TIMEOUT_MS + 20_000);
 
 /**
  * Submits a user's signed delegate action and pays its gas, but only after proving it is
@@ -29,7 +31,7 @@ const inFlight = new Set<string>();
  */
 export function POST(req: Request) {
   return handle("relay", async () => {
-    perIp(clientIp(req));
+    await perIp(clientIp(req));
     const body = await readJson(req, MAX_BODY_BYTES);
     if (typeof body.signedDelegate !== "string") throw new HttpError(400, "signedDelegate (base64) is required");
 
@@ -47,13 +49,15 @@ export function POST(req: Request) {
     if (!signature.ok) throw new HttpError(403, signature.reason);
 
     // Counted only now, so nobody can use up another account's allowance.
-    perSender(summary.senderId);
-    if (inFlight.has(summary.senderId)) throw new HttpError(409, "Your previous request is still being sent; wait a moment");
-    inFlight.add(summary.senderId);
+    await perSender(summary.senderId);
+    await overall("all");
+    if (!(await inFlight.acquire(summary.senderId))) {
+      throw new HttpError(409, "Your previous request is still being sent; wait a moment");
+    }
     try {
       return await relay(summary, verdict.call, signed);
     } finally {
-      inFlight.delete(summary.senderId);
+      await inFlight.release(summary.senderId);
     }
   });
 }

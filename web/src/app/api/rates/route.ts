@@ -8,7 +8,7 @@ const TTL_MS = 6 * 60 * 60_000;
 const TIMEOUT_MS = 8_000;
 /** After a failed refresh, keep serving the stale copy and try again this much later. */
 const RETRY_MS = 10 * 60_000;
-const perIp = rateLimiter("rates", 60, 60_000);
+const perIp = rateLimiter({ id: "rates-ip", label: "rates", limit: 60, windowMs: 60_000 });
 
 let cached: { at: number; rates: Rates } | null = null;
 
@@ -25,7 +25,7 @@ async function fetchRates(): Promise<Rates> {
  */
 export function GET(req: Request) {
   return handle("rates", async () => {
-    perIp(clientIp(req));
+    await perIp(clientIp(req));
     if (!cached || Date.now() - cached.at > TTL_MS) {
       try {
         cached = { at: Date.now(), rates: await fetchRates() };

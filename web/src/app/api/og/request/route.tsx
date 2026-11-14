@@ -7,7 +7,7 @@ import { BRAND_CARD, CARD_CACHE, limitCards, renderCard } from "@/lib/server/car
  * the link itself, so it never changes and caches for a day.
  */
 export async function GET(req: Request) {
-  const limited = limitCards(req);
+  const limited = await limitCards(req);
   if (limited) return limited;
   const request = parseRequest(new URL(req.url).searchParams);
   if (!request) return renderCard(BRAND_CARD, req, CARD_CACHE.fallback);

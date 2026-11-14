@@ -9,7 +9,7 @@ const GRANT = 5_000n * ONE_USDC;
 /** Accounts holding at least this much already have enough to try Payday. */
 const ENOUGH = 1_000n * ONE_USDC;
 const MINT_GAS = 30_000_000_000_000n;
-const perIp = rateLimiter("test USDC", 3, 60 * 60_000);
+const perIp = rateLimiter({ id: "faucet-ip", label: "test USDC", limit: 3, windowMs: 60 * 60_000 });
 
 /**
  * Test networks only: mints mock USDC straight to a browser account, which need not
@@ -18,7 +18,7 @@ const perIp = rateLimiter("test USDC", 3, 60 * 60_000);
 export function POST(req: Request) {
   return handle("faucet", async () => {
     if (!config.hasFaucet) throw new HttpError(404, "There is no faucet on this network");
-    perIp(clientIp(req));
+    await perIp(clientIp(req));
     const body = await readJson(req, 256);
     const accountId = body.accountId;
     if (typeof accountId !== "string" || !IMPLICIT_ACCOUNT.test(accountId)) {
