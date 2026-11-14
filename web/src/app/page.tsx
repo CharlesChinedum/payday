@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { FlowAnimation } from "@/components/animations";
-import { ArrowRightIcon, ArrowUpRightIcon } from "@/components/icons";
+import { ArrowRightIcon, ArrowUpRightIcon, CheckIcon } from "@/components/icons";
 import { HeroPayslip } from "@/components/landing/HeroPayslip";
 import { LiveStream } from "@/components/landing/LiveStream";
 import { PayCurve } from "@/components/landing/PayCurve";
@@ -65,7 +65,7 @@ function Section({ id, children, className = "" }: { id?: string; children: Reac
 }
 
 function Eyebrow({ children }: { children: ReactNode }) {
-  return <p className="num text-xs uppercase tracking-[0.2em] text-muted">{children}</p>;
+  return <p className="text-sm font-semibold text-accent">{children}</p>;
 }
 
 function Hero() {
@@ -73,15 +73,12 @@ function Hero() {
     <div className="dot-grid border-b border-border">
       <Section className="grid items-center gap-12 !py-14 sm:!py-20 lg:grid-cols-[1.15fr_0.85fr]">
         <div className="animate-rise">
-          <Eyebrow>Payroll on NEAR · USDC</Eyebrow>
-          <h1 className="display mt-5 text-6xl sm:text-7xl lg:text-[5.75rem]">
-            Payday is
-            <br />
-            every{" "}
-            <em className="relative isolate inline-block">
-              second.
-              <span className="absolute inset-x-0 bottom-[0.12em] -z-10 h-[0.28em] bg-lime" aria-hidden="true" />
-            </em>
+          <p className="inline-flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1 text-xs font-medium text-muted shadow-sm">
+            <span className="h-1.5 w-1.5 rounded-full bg-accent" aria-hidden="true" />
+            USDC payroll on NEAR
+          </p>
+          <h1 className="display mt-6 text-5xl sm:text-6xl lg:text-7xl">
+            Payroll that pays <span className="text-accent">every second.</span>
           </h1>
           <p className="mt-6 max-w-xl text-lg text-muted">
             Pay a remote team in USDC that streams by the second. Workers withdraw whenever they want, never touch a
@@ -90,7 +87,7 @@ function Hero() {
           <div className="mt-8 flex flex-wrap gap-3">
             <Link
               href="/employer"
-              className="group inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-3 text-sm font-medium text-accent-ink transition duration-150 hover:brightness-110 active:scale-[0.97]"
+              className="group inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-3 text-sm font-semibold text-accent-ink shadow-sm transition duration-150 hover:brightness-110 active:scale-[0.97]"
             >
               Run a payroll
               <ArrowRightIcon className="transition-transform duration-200 group-hover:translate-x-0.5" />
@@ -103,9 +100,12 @@ function Hero() {
             </Link>
           </div>
           <ul className="mt-8 flex flex-wrap gap-x-6 gap-y-2 text-sm text-muted">
-            <li>No wallet to install</li>
-            <li>No gas for workers</li>
-            <li>Every unit accounted for on-chain</li>
+            {["No wallet to install", "No gas for workers", "Every unit accounted for on-chain"].map((item) => (
+              <li key={item} className="inline-flex items-center gap-2">
+                <CheckIcon className="text-accent" />
+                {item}
+              </li>
+            ))}
           </ul>
         </div>
         <div className="animate-rise [animation-delay:120ms]">
@@ -145,7 +145,7 @@ function How() {
 
         <div className="mx-auto mt-10 max-w-3xl">
           <FlowAnimation className="aspect-[3/1] w-full" />
-          <div className="num mt-1 grid grid-cols-3 text-[11px] uppercase tracking-wider text-muted">
+          <div className="mt-1 grid grid-cols-3 text-xs font-medium text-muted">
             <span>Employer</span>
             <span className="text-center">Payday contract</span>
             <span className="text-right">Workers</span>
@@ -155,7 +155,7 @@ function How() {
         <div className="mt-12 grid gap-4 lg:grid-cols-2">
           {TRACKS.map((track) => (
             <div key={track.who} className="flex flex-col rounded-2xl border border-border bg-bg p-6 sm:p-8">
-              <h3 className="num text-xs uppercase tracking-[0.2em] text-muted">{track.who}</h3>
+              <h3 className="text-sm font-semibold text-accent">{track.who}</h3>
               <ol className="mt-5 flex-1 space-y-5">
                 {track.steps.map(([title, body], i) => (
                   <li key={title} className="group grid grid-cols-[2rem_1fr] gap-x-3">
@@ -303,7 +303,7 @@ function ClosingCall() {
     <Section className="reveal">
       <div className="rounded-3xl bg-hero px-6 py-14 text-center text-hero-ink sm:px-12 sm:py-20">
         <h2 className="display mx-auto max-w-2xl text-5xl sm:text-6xl">
-          Stop paying people <em className="text-lime">late.</em>
+          Stop paying people <span className="text-lime">late.</span>
         </h2>
         <p className="mx-auto mt-5 max-w-md text-hero-ink/70">
           Try both sides in two browser tabs. It takes about a minute and needs no wallet.

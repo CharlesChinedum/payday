@@ -40,7 +40,7 @@ function BalanceHero(props: {
 
   return (
     <section className="relative overflow-hidden rounded-3xl bg-hero p-6 text-hero-ink sm:p-8">
-      <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-hero-ink/60">
+      <div className="flex items-center gap-2 text-xs font-medium text-hero-ink/70">
         {streaming.length > 0 && <LiveDot tone="lime" />}
         Available to withdraw
       </div>
@@ -365,7 +365,7 @@ export function WorkerView() {
             <LocalAmount units={ledger.balance} className="mt-1 block text-sm font-normal text-muted" />
           </Stat>
           <div>
-            <div className="text-xs font-medium uppercase tracking-wider text-muted">Your Payday account</div>
+            <div className="text-xs font-medium text-muted">Your Payday account</div>
             <div className="mt-2">
               <AccountChip id={account.accountId} />
             </div>

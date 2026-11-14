@@ -19,8 +19,8 @@ export function SiteHeader() {
     <header className="sticky top-0 z-40 border-b border-border bg-bg/85 backdrop-blur-md print:hidden">
       <nav className="mx-auto flex max-w-6xl items-center gap-1 px-4 py-3 sm:gap-2 sm:px-6">
         <Link href="/" className="group mr-1 flex items-center gap-1.5 sm:mr-6 sm:gap-2">
-          <Logo className="h-6 w-6 transition-transform duration-300 group-hover:rotate-90" />
-          <span className="display text-xl sm:text-2xl">Payday</span>
+          <Logo className="h-7 w-7 transition-transform duration-300 group-hover:scale-105" />
+          <span className="text-lg font-semibold tracking-tight">Payday</span>
         </Link>
         {LINKS.map(({ href, label }) => {
           const active = pathname === href;

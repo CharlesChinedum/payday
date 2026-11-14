@@ -3,8 +3,6 @@ import { headers } from "next/headers";
 import { Suspense } from "react";
 import "@fontsource-variable/geist";
 import "@fontsource-variable/geist-mono";
-import "@fontsource/instrument-serif/400.css";
-import "@fontsource/instrument-serif/400-italic.css";
 import { SiteHeader } from "@/components/SiteHeader";
 import { THEME_SCRIPT } from "@/lib/theme";
 import "./globals.css";

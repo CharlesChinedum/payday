@@ -20,7 +20,7 @@ export interface CardContent {
 }
 
 export const BRAND_CARD: CardContent = {
-  kicker: "PAYDAY",
+  kicker: "Payday",
   title: "Payday",
   amount: null,
   caption: "USDC payroll that pays every second",
@@ -34,13 +34,13 @@ export const CARD_CACHE = {
 };
 
 const SIZE = { width: 1200, height: 630 };
-const INK = "#14211b";
-const PAPER = "#f8f5ea";
-const RULE = "#cfc9b6";
-const ACCENT = "#0a6847";
+const INK = "#111827";
+const PAPER = "#ffffff";
+const RULE = "#e5e7eb";
+const ACCENT = "#4f46e5";
 const perIp = rateLimiter({ id: "card-ip", label: "preview", limit: 60, windowMs: 60_000 });
 const font = (file: string) => readFile(join(process.cwd(), "assets", file));
-const fonts = Promise.all([font("Geist-Regular.ttf"), font("InstrumentSerif-Regular.woff")]);
+const geist = font("Geist-Regular.ttf");
 
 function Picture({ card, host }: { card: CardContent; host: string }) {
   const longTitle = card.title.length > 32;
@@ -51,7 +51,10 @@ function Picture({ card, host }: { card: CardContent; host: string }) {
       <div style={{ display: "flex", height: 14, background: ACCENT }} />
       <div style={{ display: "flex", flexDirection: "column", flex: 1, padding: "52px 72px 56px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 24 }}>
-          <div style={{ display: "flex", letterSpacing: 5 }}>{card.kicker}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <div style={{ display: "flex", width: 34, height: 34, borderRadius: 10, background: ACCENT }} />
+            <div style={{ display: "flex", fontSize: 26, opacity: 0.7 }}>{card.kicker}</div>
+          </div>
           <div
             style={{
               display: "flex",
@@ -69,20 +72,20 @@ function Picture({ card, host }: { card: CardContent; host: string }) {
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", flex: 1, justifyContent: "center" }}>
-          <div style={{ display: "flex", fontFamily: "Serif", fontSize: longTitle ? 56 : 76, lineHeight: 1.05 }}>{card.title}</div>
+          <div style={{ display: "flex", fontSize: longTitle ? 52 : 68, lineHeight: 1.08, letterSpacing: -2 }}>{card.title}</div>
           {card.amount ? (
             <div style={{ display: "flex", flexDirection: "column" }}>
-              <div style={{ display: "flex", fontFamily: "Serif", fontSize: 132, lineHeight: 1.1, color: ACCENT, marginTop: 8 }}>
+              <div style={{ display: "flex", fontSize: 124, lineHeight: 1.1, letterSpacing: -5, color: ACCENT, marginTop: 8 }}>
                 {card.amount}
               </div>
               <div style={{ display: "flex", fontSize: 30, marginTop: 12, opacity: 0.75 }}>{card.caption}</div>
             </div>
           ) : (
-            <div style={{ display: "flex", fontFamily: "Serif", fontSize: 64, marginTop: 20, color: ACCENT }}>{card.caption}</div>
+            <div style={{ display: "flex", fontSize: 56, letterSpacing: -2, marginTop: 20, color: ACCENT }}>{card.caption}</div>
           )}
         </div>
 
-        <div style={{ display: "flex", borderTop: `3px dashed ${RULE}`, paddingTop: 24, justifyContent: "space-between", fontSize: 26 }}>
+        <div style={{ display: "flex", borderTop: `2px solid ${RULE}`, paddingTop: 24, justifyContent: "space-between", fontSize: 26 }}>
           {typeof card.footer === "string" ? (
             <div style={{ display: "flex", opacity: 0.6 }}>{card.footer}</div>
           ) : (
@@ -99,13 +102,10 @@ function Picture({ card, host }: { card: CardContent; host: string }) {
 }
 
 export async function renderCard(card: CardContent, req: Request, cacheControl: string): Promise<Response> {
-  const [sans, serif] = await fonts;
+  const sans = await geist;
   return new ImageResponse(<Picture card={card} host={new URL(req.url).host} />, {
     ...SIZE,
-    fonts: [
-      { name: "Sans", data: sans, weight: 400, style: "normal" },
-      { name: "Serif", data: serif, weight: 400, style: "normal" },
-    ],
+    fonts: [{ name: "Sans", data: sans, weight: 400, style: "normal" }],
     headers: { "Cache-Control": cacheControl },
   });
 }

@@ -200,7 +200,7 @@ export function Field({ label, children, className = "" }: { label: string; chil
 export function Stat({ label, children, hint }: { label: string; children: ReactNode; hint?: ReactNode }) {
   return (
     <div>
-      <div className="text-xs font-medium uppercase tracking-wider text-muted">{label}</div>
+      <div className="text-xs font-medium text-muted">{label}</div>
       <div className="mt-1.5 text-2xl font-semibold tracking-tight">{children}</div>
       {hint && <div className="mt-1 text-xs text-muted">{hint}</div>}
     </div>
