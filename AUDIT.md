@@ -50,7 +50,7 @@ Every finding was worked on the same day. The contract is now version 2.0.0 (com
 | I-05 | **Fixed** | Start within a year of now, at most five years long; receivers cannot be the contract or the token. | `funding_rejects_milliseconds`, `cannot_pay_out_to_the_contract` |
 | I-06 | **Fixed** | `paid` and `payout_failed` (with `credited_to` and a reason) for every payout, `stream_closed`, and `worker_remaining_to` on cancel. Ids stay u64 numbers, safe in JavaScript far beyond any realistic count. | unit tests |
 | I-07 | **Fixed in contract 2.1.0** (14 Nov) | Checked against the real mainnet Circle USDC wasm in a sandbox: `storage_unregister` refunds the 0.00125 NEAR deposit to the account itself, not to Payday, and a duplicate `storage_deposit` refunds the caller. So Payday now pays for each account's registration at most once: an account it registered that turns up unregistered again is refused, its payout goes back to the stream or `owed`, and it must register itself. A fresh account can still be registered once, which costs the attacker at least 0.03 USDC in Payday fees plus gas for 0.00125 NEAR: unprofitable unless NEAR is above about $24, and the owner can raise the registration fee. | `payday_pays_for_a_registration_only_once` |
-| I-08 | **Partly fixed** | CI (format, clippy with warnings as errors, unit tests, web lint/test/build, `pnpm audit`) and Dependabot with a 14-day cooldown. **Open:** branch protection on the auto-deploying `main`. | `.github/workflows/ci.yml` |
+| I-08 | **Fixed** (14 Nov) | CI (format, clippy with warnings as errors, unit, sandbox and security tests, a reproducible build, web lint/test/build, `pnpm audit`) and Dependabot with a 14-day cooldown. `main` is protected: changes go through a pull request, all four CI jobs must pass, no force-pushes or deletion, and the rules apply to admins. | `.github/workflows/ci.yml`; branch protection on `main` |
 | I-09 | **Fixed / accepted** | `claim_owed` can pay another receiver. A blacklisted worker redirecting pay is accepted. | `claim_owed_can_pay_another_account` |
 
 **Found and fixed while remediating** (in new code, before release):
@@ -80,7 +80,7 @@ The fixed code (`6f924d1`) was reviewed again with the same method. It confirmed
 
 Tests also hardened: the recovery-phrase typo test is now deterministic (it failed about 1 run in 16), and CI runs the sandbox integration and security tests.
 
-**Still open before mainnet:** I-08 (branch protection on `main`, set when this round is merged); running `scripts/handover.sh` on deploy day; connecting the shared rate-limit store in production; and re-running this review on the fixed commit, as planned below.
+**Still open before mainnet:** running `scripts/handover.sh` on deploy day; connecting the shared rate-limit store in production; and re-running this review on the fixed commit, as planned below.
 
 ## Closing the remaining items (14 November 2026)
 
