@@ -27,6 +27,12 @@ export const CheckIcon = (p: IconProps) => (
   </Icon>
 );
 
+export const ChevronDownIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4.5 6.5L8 10l3.5-3.5" />
+  </Icon>
+);
+
 export const CopyIcon = (p: IconProps) => (
   <Icon {...p}>
     <rect x="5.5" y="5.5" width="8" height="8" rx="1.8" />
