@@ -7,6 +7,11 @@ updates:
     # Give new releases two weeks before proposing them (supply-chain hygiene).
     cooldown:
       default-days: 14
+    ignore:
+      # Node types follow the Node version the app runs on (24, in CI and on Vercel),
+      # not the newest Node: raise this together with the runtime.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: cargo
     directory: /contract
     schedule:
