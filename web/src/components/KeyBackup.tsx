@@ -41,7 +41,8 @@ function download(role: Role, accountId: string, backup: Backup) {
   link.href = url;
   link.download = `payday-${role}-recovery.txt`;
   link.click();
-  URL.revokeObjectURL(url);
+  // Revoking at once can cancel the download in some browsers.
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
 /** A short, dismissible prompt shown until the account is backed up. */
@@ -108,9 +109,10 @@ export function KeyBackup({ role, accountId }: { role: Role; accountId: string }
   return (
     <Card title="Back up this account" aside={backedUp ? <span className="text-xs text-accent">Backed up</span> : null}>
       <p className="text-sm text-muted">
-        Payday keeps your account key in this browser only, locked so no page or extension can read it out. Write the
-        recovery {backup?.kind === "key" ? "key" : "phrase"} down somewhere safe: it is the only way back in from another
-        browser, and anyone who has it can move your money.
+        Payday keeps your account key in this browser only, locked so no page or extension can read it out. Until you
+        confirm your backup, the recovery {backup?.kind === "key" ? "key" : "phrase"} is also kept here so you can see it;
+        write it down somewhere safe: it is the only way back in from another browser, and anyone who has it can move
+        your money.
       </p>
 
       {!backup && backedUp && (
@@ -199,6 +201,65 @@ export function KeyBackup({ role, accountId }: { role: Role; accountId: string }
             </div>
           </div>
         )}
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * Shown instead of the dashboard when this browser knew an account but lost its key. A new
+ * account is not created silently: the user restores the old one, or knowingly another.
+ */
+export function MissingKey({ role, accountId }: { role: Role; accountId: string }) {
+  const [input, setInput] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  async function restore() {
+    setError(null);
+    let restoredId: string;
+    try {
+      restoredId = implicitId(parseBackup(input).keyPair);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      return;
+    }
+    if (
+      restoredId !== accountId &&
+      !window.confirm(`That phrase opens ${shortId(restoredId)}, not ${shortId(accountId)}. Use it anyway?`)
+    ) {
+      return;
+    }
+    try {
+      await restoreKey(role, input);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      return;
+    }
+    window.location.reload();
+  }
+
+  return (
+    <Card title="Restore your account">
+      <Notice tone="error">
+        This browser no longer has the key for <span className="num break-all">{accountId}</span>, usually because some
+        site data was cleared. Its money is safe on-chain: enter its recovery phrase to get back in.
+      </Notice>
+      <div className="mt-4 space-y-3">
+        <textarea
+          className="num h-24 w-full rounded-xl border border-border bg-bg p-3 text-sm focus:border-accent focus:outline-none"
+          placeholder="12-word recovery phrase, or a secret key starting with ed25519:"
+          spellCheck={false}
+          autoComplete="off"
+          value={input}
+          onChange={(e) => {
+            setInput(e.target.value);
+            setError(null);
+          }}
+        />
+        {error && <Notice tone="error">{error}</Notice>}
+        <Button disabled={!input.trim()} onClick={restore}>
+          Restore
+        </Button>
       </div>
     </Card>
   );

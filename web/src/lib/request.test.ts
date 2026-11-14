@@ -34,9 +34,9 @@ describe("request links", () => {
     expect(cleanNote("x".repeat(200))).toHaveLength(80);
   });
 
-  it("fill a payroll row for whole days from today, UTC", () => {
+  it("fill a payroll row for whole days from tomorrow, UTC, never backdated", () => {
     const r = { worker: "bob.testnet", amount: 3_000_000_000n, days: 30, note: "" };
-    expect(requestDraft(r, NOV_12_15H)).toEqual({ worker: "bob.testnet", amount: "3000", start: "2026-11-12", end: "2026-12-12" });
+    expect(requestDraft(r, NOV_12_15H)).toEqual({ worker: "bob.testnet", amount: "3000", start: "2026-11-13", end: "2026-12-13" });
     expect(requestSummary(r)).toBe("3,000 USDC over 30 days");
     expect(requestSummary({ ...r, days: 1 })).toBe("3,000 USDC over 1 day");
     expect(requestSummary({ ...r, amount: 450_500_000n })).toBe("450.50 USDC over 30 days");

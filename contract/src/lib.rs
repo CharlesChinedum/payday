@@ -34,7 +34,7 @@ use near_sdk::{
 #[cfg(test)]
 mod tests;
 
-pub const VERSION: &str = "2.1.0";
+pub const VERSION: &str = "2.2.0";
 
 /// 1 USDC (6 decimals): the smallest stream, and the smallest payout to another account.
 pub const MIN_STREAM_AMOUNT: u128 = 1_000_000;
@@ -61,6 +61,8 @@ pub const REGISTRATION_DEPOSIT: NearToken =
     NearToken::from_yoctonear(1_250_000_000_000_000_000_000);
 /// NEAR kept free beyond storage so callbacks can always record what they owe.
 pub const NEAR_RESERVE: NearToken = NearToken::from_millinear(250);
+/// Storage of one `registered` entry, excluding the account id: key prefix, length, overhead.
+const REGISTERED_ENTRY_BYTES: u128 = 45;
 
 const GAS_FT_TRANSFER: Gas = Gas::from_tgas(15);
 const GAS_STORAGE_DEPOSIT: Gas = Gas::from_tgas(10);
@@ -437,7 +439,8 @@ impl Payday {
         let account = env::predecessor_account_id();
         let receiver = receiver.unwrap_or_else(|| account.clone());
         self.assert_valid_receiver(&receiver);
-        let amount = self.owed.remove(&account).unwrap_or(0);
+        // The entry is zeroed, not removed: the payout below needs it if it fails.
+        let amount = self.owed.get_mut(&account).map(std::mem::take).unwrap_or(0);
         require!(amount > 0, "Nothing owed");
         if receiver != account {
             require!(
@@ -453,7 +456,9 @@ impl Payday {
         self.payout(account, receiver, amount, fee, Source::Owed)
     }
 
-    /// Deletes streams that have ended and been fully paid out. Anyone may call it.
+    /// Deletes streams that have ended and been fully paid out. Anyone may call it. A
+    /// finished stream whose remainder is too small to pay its own payout fee can never be
+    /// withdrawn or cancelled, so that remainder goes to fees and the stream is deleted too.
     pub fn prune(&mut self, stream_ids: Vec<u64>) -> u32 {
         require!(
             stream_ids.len() <= MAX_PRUNE,
@@ -461,11 +466,21 @@ impl Payday {
         );
         let now = now_secs();
         let mut removed = 0;
+        let fee = self.payout_fee;
         for id in stream_ids {
-            let settled = self.streams.get(&id).filter(|s| s.is_settled(now)).cloned();
-            if let Some(stream) = settled {
+            let done = self
+                .streams
+                .get(&id)
+                .filter(|s| now >= s.stop && s.deposit - s.withdrawn <= fee)
+                .cloned();
+            if let Some(stream) = done {
+                let dust = stream.deposit - stream.withdrawn;
+                self.fees_collected += dust;
                 self.remove_stream(id, &stream);
-                emit("stream_closed", json!({ "id": id }));
+                emit(
+                    "stream_closed",
+                    json!({ "id": id, "dust_to_fees": U128(dust) }),
+                );
                 removed += 1;
             }
         }
@@ -567,6 +582,15 @@ impl Payday {
             ));
         };
         if registered {
+            if gross <= base_fee.0 {
+                return PromiseOrValue::Value(self.fail_payout(
+                    &account,
+                    &receiver,
+                    gross,
+                    source,
+                    "amount does not cover the fees",
+                ));
+            }
             return PromiseOrValue::Promise(
                 self.transfer_then_settle(None, account, receiver, gross, base_fee.0, source),
             );
@@ -590,7 +614,7 @@ impl Payday {
                 "amount does not cover the fees",
             ));
         }
-        if !self.can_afford_registration() {
+        if !self.can_afford_registration(&receiver) {
             return PromiseOrValue::Value(self.fail_payout(
                 &account,
                 &receiver,
@@ -818,6 +842,10 @@ impl Payday {
         self.assert_valid_receiver(&receiver);
         require!(receiver != sender, "Cannot send to yourself");
         require!(amount >= MIN_STREAM_AMOUNT, "Sends must be at least 1 USDC");
+        require!(
+            amount > self.payout_fee,
+            "Amount does not cover the payout fee"
+        );
         // Detached: the transfer has settled; a failed payout lands in the sender's owed.
         let fee = self.payout_fee;
         self.payout(sender, receiver, amount, fee, Source::Owed)
@@ -826,14 +854,27 @@ impl Payday {
 
     /// Pays `amount` from `source` to `receiver`, less `base_fee` (and the registration
     /// fee if needed), crediting `account` if it fails.
+    ///
+    /// A failed payout may have to credit `account`'s `owed` balance, and the callback
+    /// that does it cannot be allowed to need new storage: if Payday could not pay for it,
+    /// the callback would fail and the amount would be recorded nowhere (review 3, M-1).
+    /// So the entry is created here, while the reserve can still be checked, and kept.
     fn payout(
-        &self,
+        &mut self,
         account: AccountId,
         receiver: AccountId,
         amount: u128,
         base_fee: u128,
         source: Source,
     ) -> Promise {
+        if source != Source::Fees && !self.owed.contains_key(&account) {
+            self.owed.insert(account.clone(), 0);
+            self.owed.flush();
+            require!(
+                self.free_near() >= NEAR_RESERVE.as_yoctonear(),
+                "Payday is at storage capacity; try again later"
+            );
+        }
         ext_ft::ext(self.token.clone())
             .with_static_gas(GAS_STORAGE_VIEW)
             .storage_balance_of(receiver.clone())
@@ -934,8 +975,12 @@ impl Payday {
         env::account_balance().as_yoctonear().saturating_sub(locked)
     }
 
-    fn can_afford_registration(&self) -> bool {
-        self.free_near() >= NEAR_RESERVE.as_yoctonear() + REGISTRATION_DEPOSIT.as_yoctonear()
+    /// Room for the registration deposit and for the `registered` entry it adds, above the reserve.
+    fn can_afford_registration(&self, receiver: &AccountId) -> bool {
+        let entry = (REGISTERED_ENTRY_BYTES + receiver.len() as u128)
+            * env::storage_byte_cost().as_yoctonear();
+        self.free_near()
+            >= NEAR_RESERVE.as_yoctonear() + REGISTRATION_DEPOSIT.as_yoctonear() + entry
     }
 
     fn assert_owner(&self) {

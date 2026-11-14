@@ -22,9 +22,15 @@ export function isNearAccountId(value: string): boolean {
   return value.length >= 2 && value.length <= 64 && NEAR_ACCOUNT.test(value);
 }
 
-/** Long ids (implicit accounts) as "1a2b3c4d…9e8f7a"; named accounts unchanged. */
+const MACHINE_ID = /^([0-9a-f]{64}|0x[0-9a-f]{40})$/;
+
+/**
+ * Implicit accounts as "1a2b3c4d…9e8f7a". Named accounts are always shown in full: a
+ * shortened name is easy to imitate (alice-design… vs alice-dexxxx…), a 56-bit hex prefix
+ * and suffix is not.
+ */
 export function shortId(id: string): string {
-  return id.length > 24 ? `${id.slice(0, 8)}…${id.slice(-6)}` : id;
+  return MACHINE_ID.test(id) ? `${id.slice(0, 8)}…${id.slice(-6)}` : id;
 }
 
 /** Validates a destination address for its chain, including checksums where they exist. */

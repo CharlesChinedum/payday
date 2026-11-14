@@ -51,13 +51,13 @@ Fees pay for what Payday spends on its users' behalf: storage for streams, USDC 
 
 | Part | Status |
 |---|---|
-| Streaming contract 2.1.0 (Rust, `contract/`) | **Done** — 66 unit tests, 9 sandbox integration tests, 7 sandbox security tests; reproducible build checked in CI |
+| Streaming contract 2.2.0 (Rust, `contract/`) | **Done** — 70 unit tests, 9 sandbox integration tests, 8 sandbox security tests; reproducible build checked in CI |
 | Mock USDC for testnet (`mock-usdc/`) | **Done** — standard NEP-141, public `mint` (test networks only) |
 | Gasless relayer (`web/src/app/api/relay`) | **Done** — signature-verified, pre-flighted against chain state |
 | Web app (`web/`) | **Done** — landing page, employer and worker dashboards, backup and restore, move money out |
 | 1Click cash-out | **Quotes done** — live mainnet quotes on testnet; real swaps need the mainnet deploy |
 | CSV export | **Done** — per-stream accountant export |
-| Security review | **Done, three rounds** — see [AUDIT.md](AUDIT.md); every finding fixed or accepted except the deploy-day steps it lists |
+| Security review | **Done, three independent reviews** — see [AUDIT.md](AUDIT.md); every finding fixed or accepted except the deploy-day steps it lists |
 | Hosted demo | **Done** — https://payday-near-eight.vercel.app (testnet), redeployed from `main` on every push |
 | Mainnet deployment | Not started: the deploy-day steps in AUDIT.md (`scripts/handover.sh`) and a re-review come first |
 
@@ -112,13 +112,13 @@ scripts/build.sh
 cd contract && cargo test
 ```
 
-You should see `66 passed` (unit), `9 passed` (integration) and `7 passed` (security). The sandbox tests deploy both contracts to a local NEAR node and check, with real cross-contract calls: funding with fees, payouts that carry the payout fee and register new receivers (charging registration only then), failed payouts restored to their stream with no fee kept, that the contract's USDC balance always equals what it owes, cancels that split funds exactly, sending USDC out through Payday, the owner upgrading the contract through itself, and that the attacks from [AUDIT.md](AUDIT.md) no longer work.
+You should see `70 passed` (unit), `9 passed` (integration) and `8 passed` (security). The sandbox tests deploy both contracts to a local NEAR node and check, with real cross-contract calls: funding with fees, payouts that carry the payout fee and register new receivers (charging registration only then), failed payouts restored to their stream with no fee kept, that the contract's USDC balance always equals what it owes, cancels that split funds exactly, sending USDC out through Payday, the owner upgrading the contract through itself, and that the attacks from [AUDIT.md](AUDIT.md) no longer work.
 
 ```bash
 cd web && pnpm test
 ```
 
-You should see `92 passed`: browser keys that cannot be read out (and still sign what the relayer accepts, migrate, restore), the shared rate limits and relay lock, the page CSP, the relayer policy and pre-flight, payslip periods and earnings (split across months by the contract's vesting rule) and their share cards, request-to-be-paid links, exchange-rate validation, IPv6 rate-limit keys, DAO proposals (built, read back from their arguments, and safely quoted in CLI commands), signature verification (including the audit's forged delegate), delegate decoding, reading results from events, address checksums, recovery phrases, amount and date parsing, vesting maths and the CSVs.
+You should see `95 passed`: browser keys that cannot be read out (and still sign what the relayer accepts, migrate, restore, and are never silently replaced), the relay budget that throwaway keys cannot use up, the shared rate limits and relay lock, the page CSP, the relayer policy and pre-flight, payslip periods and earnings (split across months by the contract's vesting rule) and their share cards, request-to-be-paid links, exchange-rate validation, IPv6 rate-limit keys, DAO proposals (built, read back from their arguments, and safely quoted in CLI commands), signature verification (including the audit's forged delegate), delegate decoding, reading results from events, address checksums, recovery phrases, amount and date parsing, vesting maths and the CSVs.
 
 ### 2. Run everything locally
 

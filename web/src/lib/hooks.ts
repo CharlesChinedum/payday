@@ -2,12 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { StreamRecord } from "./csv";
-import { loadOrCreateKey, readAccountId, type BrowserKey, type Role } from "./keys";
+import { loadOrCreateKey, MissingKeyError, readAccountId, type BrowserKey, type Role } from "./keys";
 import { getFees, getOwed, getStreams, getUsdcBalance, type Fees } from "./near";
 
 export type AccountState =
   | { status: "loading" }
-  | { status: "error"; error: string }
+  | { status: "error"; error: string; missingAccount?: string }
   | { status: "ready"; key: BrowserKey; accountId: string };
 
 /**
@@ -20,7 +20,9 @@ export function useRoleAccount(role: Role): AccountState {
     let cancelled = false;
     loadOrCreateKey(role).then(
       (key) => !cancelled && setState({ status: "ready", key, accountId: key.accountId }),
-      (e: Error) => !cancelled && setState({ status: "error", error: e.message }),
+      (e: Error) =>
+        !cancelled &&
+        setState({ status: "error", error: e.message, missingAccount: e instanceof MissingKeyError ? e.accountId : undefined }),
     );
     return () => {
       cancelled = true;

@@ -23,7 +23,7 @@ import {
   type PaydayAction,
 } from "@/lib/dao";
 import { useNow, useOtherRoleId } from "@/lib/hooks";
-import { formatUsdc } from "@/lib/money";
+import { formatUsdc, vestedAt } from "@/lib/money";
 import { getFees, getStreams, getUsdcBalance, view, type Fees } from "@/lib/near";
 import { PayrollComposer } from "../employer/PayrollComposer";
 import { StreamsTable } from "../employer/StreamsTable";
@@ -149,15 +149,39 @@ const STATUS_TONE: Record<string, "good" | "bad" | "wait" | "neutral"> = {
 };
 const STATUS_TEXT: Record<string, string> = { InProgress: "voting", Approved: "approved", Failed: "failed to run" };
 
-function actionText(action: PaydayAction): string {
-  if (action.kind === "cancel") return `Stops stream #${action.streamId}; the unearned rest returns to the DAO.`;
-  const total = action.streams.reduce((sum, s) => sum + s.amount, 0n);
-  const who = action.streams.length === 1 ? shortId(action.streams[0].worker) : `${action.streams.length} contributors`;
-  return `Streams ${formatUsdc(total)} USDC to ${who}; ${formatUsdc(action.total)} USDC leaves the treasury including fees.`;
+const fmtDate = (secs: number) => new Date(secs * 1000).toISOString().slice(0, 10);
+
+/**
+ * What a proposal does, read from its arguments: every stream with its full account,
+ * amount and dates, and how much would be withdrawable the moment the vote passes.
+ */
+function ActionSummary({ action, nowSecs, open }: { action: PaydayAction; nowSecs: number; open: boolean }) {
+  if (action.kind === "cancel") {
+    return <p className="text-sm">Stops stream #{action.streamId}; the unearned rest returns to the DAO.</p>;
+  }
+  const upfront = action.streams.reduce((sum, s) => sum + vestedAt(s.amount, s.start, s.stop, nowSecs), 0n);
+  return (
+    <div className="space-y-1 text-sm">
+      <p>{formatUsdc(action.total)} USDC leaves the treasury, including fees:</p>
+      <ul className="space-y-0.5 text-xs">
+        {action.streams.map((s, i) => (
+          <li key={i} className="num break-all">
+            {formatUsdc(s.amount)} USDC to {s.worker}, {fmtDate(s.start)} to {fmtDate(s.stop)}
+          </li>
+        ))}
+      </ul>
+      {open && upfront > 0n && (
+        <p className="text-xs text-danger">
+          Starts in the past: {formatUsdc(upfront)} USDC would be withdrawable as soon as this passes.
+        </p>
+      )}
+    </div>
+  );
 }
 
 function ProposalRow({ p, dao, signer }: { p: DaoState["proposals"][number]; dao: string; signer: string }) {
   const [showVote, setShowVote] = useState(false);
+  const now = useNow(60_000);
   const approvals = Object.values(p.votes).filter((v) => v === "Approve").length;
   const rejections = Object.values(p.votes).filter((v) => v === "Reject").length;
   return (
@@ -170,7 +194,7 @@ function ProposalRow({ p, dao, signer }: { p: DaoState["proposals"][number]; dao
         </span>
       </div>
       {/* What the proposal does, read from its arguments: the description is the proposer's words. */}
-      <p className="text-sm">{actionText(p.action)}</p>
+      <ActionSummary action={p.action} nowSecs={Math.floor(now / 1000)} open={p.status === "InProgress"} />
       <p className="text-xs text-muted">“{p.description.slice(0, 280)}”</p>
       {p.status === "InProgress" && (
         <div>

@@ -2,12 +2,12 @@
 
 import { useEffect, useState } from "react";
 import type { BrowserKey } from "@/lib/keys";
-import { addressHint, checkAddress, isNearAccountId } from "@/lib/address";
+import { IMPLICIT_ACCOUNT, addressHint, checkAddress, isNearAccountId } from "@/lib/address";
 import { CASH_OUT_ASSETS, GAS_TGAS, ONE_USDC, ONE_YOCTO, config, type CashOutAsset } from "@/lib/config";
 import type { StreamRecord } from "@/lib/csv";
 import type { LogFn } from "@/lib/hooks";
 import { formatUsdc, parseUsdc, usdcDecimal } from "@/lib/money";
-import { explain, getFees, isRegisteredForUsdc, paidOut, relayCall, type Fees, type RelayResult } from "@/lib/near";
+import { accountExists, explain, getFees, isRegisteredForUsdc, paidOut, relayCall, type Fees, type RelayResult } from "@/lib/near";
 import { report } from "@/lib/report";
 import { availableNow } from "./StreamMath";
 import { Button, Card, Field, Notice, Pill, TextInput, shortId } from "./ui";
@@ -138,7 +138,8 @@ function QuoteSummary({ offer, gross, now }: { offer: Offer; gross: bigint; now:
   const secondsLeft = Math.max(0, Math.floor((offer.deadline - now) / 1000));
   const rows = [
     ["You send", `${formatUsdc(gross, 6)} USDC`],
-    ["They receive", `${offer.quote.amountOutFormatted} ${offer.asset.label}`],
+    // From the validated base-unit amount, not 1Click's pre-formatted string.
+    ["They receive", `${formatUsdc(BigInt(offer.quote.amountOut), 6)} ${offer.asset.label}`],
     ["At least", formatUsdc(BigInt(offer.quote.minAmountOut), 6)],
     ["Arrives in", offer.quote.timeEstimate ? `about ${offer.quote.timeEstimate} s` : "unknown"],
   ];
@@ -298,6 +299,11 @@ export function MoveMoney(props: {
     setBusy("send");
     setError(null);
     try {
+      // A named account that does not exist yet would receive the USDC whenever someone
+      // creates it; implicit (hex) accounts are fine before they exist.
+      if (!IMPLICIT_ACCOUNT.test(receiver) && !(await accountExists(receiver))) {
+        return setError(`${receiver} does not exist on NEAR ${config.networkId}. Check the spelling.`);
+      }
       const res = await pay(receiver, amount);
       report(log, res, (o) => {
         const paid = paidOut(o).find((p) => p.receiver === receiver);

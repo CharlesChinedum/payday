@@ -77,6 +77,12 @@ describe("rate limits (H-04)", () => {
     await expect(two("a")).rejects.toMatchObject({ status: 429 });
     expect(sharedLimitsEnabled).toBe(true);
     expect(calls[1]).toEqual(["PEXPIRE", expect.stringMatching(/^rl:t:\d+:a$/), 120_000]);
+    // Expiry is set once per window, and a refused key stops reaching the store.
+    expect(calls.filter(([cmd]) => cmd === "PEXPIRE")).toHaveLength(1);
+    const before = calls.length;
+    await expect(one("a")).rejects.toMatchObject({ status: 429 });
+    await expect(two("a")).rejects.toMatchObject({ status: 429 });
+    expect(calls.length).toBe(before + 1);
   });
 
   it("fall back to memory when the store fails, instead of refusing everyone", async () => {

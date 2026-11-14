@@ -67,6 +67,8 @@ export async function readJson(req: Request, maxBytes: number): Promise<Record<s
  */
 export function clientIp(req: Request): string {
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim().slice(0, 64) || "local";
+  const mapped = /^(?:::ffff:|0{1,4}(?::0{1,4}){4}:ffff:)(\d{1,3}(?:\.\d{1,3}){3})$/i.exec(ip);
+  if (mapped) return mapped[1];
   return ip.includes(":") ? ipv6Prefix(ip) : ip;
 }
 

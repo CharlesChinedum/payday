@@ -36,7 +36,7 @@ const errorOf = (data: Record<string, unknown>, fallback: string) =>
 const onboarding = new Map<string, Promise<void>>();
 
 /** Reads the chain directly, so existing accounts never cost a server round trip. */
-async function accountExists(accountId: string): Promise<boolean> {
+export async function accountExists(accountId: string): Promise<boolean> {
   try {
     await provider.viewAccount({ accountId, blockQuery: { finality: "optimistic" } });
     return true;

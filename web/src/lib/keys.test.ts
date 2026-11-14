@@ -94,13 +94,28 @@ describe("keys the page cannot read (H-05)", () => {
     expect(backupOf("worker")).toEqual({ kind: "phrase", words: seedPhrase.split(" ") });
     expect(await relayerAccepts(key)).toBe(true);
 
+    // Review 3, B-4: even if the old layout said "backed up", the phrase stays until the user
+    // confirms again under the new warning, because confirming now deletes it.
     useMemoryStores();
     storage.setItem(LEGACY_KEY, keyPair.toString());
     storage.setItem(LEGACY_PHRASE, seedPhrase);
     storage.setItem("payday:testnet:backed-up:worker", "yes");
     await loadOrCreateKey("worker");
-    expect(backupOf("worker")).toBeNull();
-    expect(isBackedUp("worker")).toBe(true);
+    expect(backupOf("worker")).toEqual({ kind: "phrase", words: seedPhrase.split(" ") });
+    expect(isBackedUp("worker")).toBe(false);
+  });
+
+  it("rebuild a lost key from its pending phrase, and never replace a lost backed-up account", async () => {
+    // Review 3, B-1: the key record disappears while localStorage survives.
+    const key = await loadOrCreateKey("worker");
+    records.clear();
+    const again = await loadOrCreateKey("worker");
+    expect(again.accountId).toBe(key.accountId);
+
+    markBackedUp("worker");
+    records.clear();
+    await expect(loadOrCreateKey("worker")).rejects.toMatchObject({ name: "Error", accountId: key.accountId });
+    expect(readAccountId("worker")).toBe(key.accountId);
   });
 
   it("restore from a phrase into the safe store, marked as backed up", async () => {
