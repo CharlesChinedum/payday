@@ -66,7 +66,7 @@ function Spinner() {
 }
 
 const PILL_TONES = {
-  live: "bg-accent-soft text-accent",
+  live: "bg-gold-soft text-gold",
   neutral: "bg-surface-2 text-muted",
   good: "bg-accent-soft text-accent",
   bad: "bg-danger-soft text-danger",
@@ -82,10 +82,9 @@ export function Pill({ tone = "neutral", children }: { tone?: keyof typeof PILL_
   );
 }
 
-/** `lime` is for dark, inverted surfaces where the accent would not stand out. */
-export function LiveDot({ tone = "accent" }: { tone?: "accent" | "lime" }) {
-  const color = tone === "lime" ? "bg-lime" : "bg-accent";
-  return <span className={`h-1.5 w-1.5 animate-live rounded-full ${color}`} aria-hidden="true" />;
+/** Live state, in gold on any surface. */
+export function LiveDot() {
+  return <span className="h-1.5 w-1.5 animate-live rounded-full bg-lime" aria-hidden="true" />;
 }
 
 export function Skeleton({ className = "" }: { className?: string }) {
@@ -211,7 +210,7 @@ export function ProgressBar({ fraction }: { fraction: number }) {
   return (
     <div className="h-1.5 overflow-hidden rounded-full bg-surface-2">
       <div
-        className="h-full origin-left rounded-full bg-accent transition-transform duration-1000 ease-linear"
+        className="h-full origin-left rounded-full bg-lime transition-transform duration-1000 ease-linear"
         style={{ transform: `scaleX(${Math.min(1, Math.max(0, fraction))})` }}
       />
     </div>

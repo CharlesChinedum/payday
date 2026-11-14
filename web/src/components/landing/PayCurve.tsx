@@ -41,7 +41,7 @@ export function PayCurve() {
       >
         <polygon
           points={`${x(0)},${y(0)} ${x(day)},${y(0)} ${x(day)},${y(earned)}`}
-          className="fill-lime/50 transition-all duration-150"
+          className="fill-text/10 transition-all duration-150"
         />
         <line x1={x(0)} y1={y(0)} x2={x(DAYS)} y2={y(0)} className="stroke-border" strokeWidth="1.5" />
         {TICK_DAYS.map((d) => (
@@ -57,10 +57,10 @@ export function PayCurve() {
           strokeDasharray="6 6"
           strokeLinejoin="round"
         />
-        <line x1={x(0)} y1={y(0)} x2={x(DAYS)} y2={y(SALARY)} className="stroke-accent" strokeWidth="3.5" strokeLinecap="round" />
+        <line x1={x(0)} y1={y(0)} x2={x(DAYS)} y2={y(SALARY)} className="stroke-lime" strokeWidth="3.5" strokeLinecap="round" />
         <line x1={x(day)} y1={y(0)} x2={x(day)} y2={PAD.top} className="stroke-text/25 transition-all duration-150" strokeWidth="1" />
         <circle cx={x(day)} cy={y(monthEndPaid)} r="6" className="fill-surface stroke-muted transition-all duration-150" strokeWidth="2.5" />
-        <circle cx={x(day)} cy={y(earned)} r="7" className="fill-accent stroke-surface transition-all duration-150" strokeWidth="3" />
+        <circle cx={x(day)} cy={y(earned)} r="7" className="fill-lime stroke-surface transition-all duration-150" strokeWidth="3" />
       </svg>
 
       <label className="mt-2 block">
@@ -71,7 +71,7 @@ export function PayCurve() {
           max={DAYS}
           value={day}
           onChange={(e) => setDay(Number(e.target.value))}
-          className="w-full accent-accent"
+          className="w-full accent-[var(--lime)]"
         />
       </label>
 
@@ -85,14 +85,14 @@ export function PayCurve() {
         </div>
         <div>
           <div className="flex items-center gap-2 text-muted">
-            <span className="h-1 w-5 rounded-full bg-accent" /> Payday
+            <span className="h-1 w-5 rounded-full bg-lime" /> Payday
           </div>
           <div className="num mt-1 text-xl font-medium">{usd(earned)}</div>
           <div className="text-xs text-muted">paid by day {day}</div>
         </div>
         <div>
           <div className="flex items-center gap-2 text-muted">
-            <span className="h-3 w-5 rounded-sm bg-lime/60" /> Earned but out of reach
+            <span className="h-3 w-5 rounded-sm bg-text/15" /> Earned but out of reach
           </div>
           <div className="num mt-1 text-xl font-medium">{usd(lockedUp)}</div>
           <div className="text-xs text-muted">with month-end payroll, on a {usd(SALARY)} salary</div>

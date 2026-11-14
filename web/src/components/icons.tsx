@@ -104,13 +104,13 @@ export function Logo({ className = "" }: { className?: string }) {
       <rect x="1" y="1" width="22" height="22" rx="6.5" className="fill-accent" />
       <path
         d="M6 16.5l3.6-3.8 3 2.2L18 8.5"
-        className="stroke-accent-ink"
+        className="stroke-lime"
         fill="none"
         strokeWidth="2.2"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-      <circle cx="18" cy="8.5" r="1.6" className="fill-accent-ink" />
+      <circle cx="18" cy="8.5" r="1.6" className="fill-lime" />
     </svg>
   );
 }

@@ -5,6 +5,7 @@ import { ArrowRightIcon, ArrowUpRightIcon, CheckIcon } from "@/components/icons"
 import { HeroPayslip } from "@/components/landing/HeroPayslip";
 import { LiveStream } from "@/components/landing/LiveStream";
 import { PayCurve } from "@/components/landing/PayCurve";
+import { SecondsRuler } from "@/components/landing/SecondsRuler";
 import { CASH_OUT_ASSETS } from "@/lib/config";
 
 /** Each side of a payroll, in the order they happen. */
@@ -65,7 +66,7 @@ function Section({ id, children, className = "" }: { id?: string; children: Reac
 }
 
 function Eyebrow({ children }: { children: ReactNode }) {
-  return <p className="text-sm font-semibold text-accent">{children}</p>;
+  return <p className="text-sm font-semibold text-gold">{children}</p>;
 }
 
 function Hero() {
@@ -74,11 +75,11 @@ function Hero() {
       <Section className="grid items-center gap-12 !py-14 sm:!py-20 lg:grid-cols-[1.15fr_0.85fr]">
         <div className="animate-rise">
           <p className="inline-flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1 text-xs font-medium text-muted shadow-sm">
-            <span className="h-1.5 w-1.5 rounded-full bg-accent" aria-hidden="true" />
+            <span className="h-1.5 w-1.5 rounded-full bg-lime" aria-hidden="true" />
             USDC payroll on NEAR
           </p>
           <h1 className="display mt-6 text-5xl sm:text-6xl lg:text-7xl">
-            Payroll that pays <span className="text-accent">every second.</span>
+            Payroll that pays <span className="text-gold-display">every second.</span>
           </h1>
           <p className="mt-6 max-w-xl text-lg text-muted">
             Pay a remote team in USDC that streams by the second. Workers withdraw whenever they want, never touch a
@@ -102,7 +103,7 @@ function Hero() {
           <ul className="mt-8 flex flex-wrap gap-x-6 gap-y-2 text-sm text-muted">
             {["No wallet to install", "No gas for workers", "Every unit accounted for on-chain"].map((item) => (
               <li key={item} className="inline-flex items-center gap-2">
-                <CheckIcon className="text-accent" />
+                <CheckIcon className="text-gold" />
                 {item}
               </li>
             ))}
@@ -112,6 +113,9 @@ function Hero() {
           <HeroPayslip />
         </div>
       </Section>
+      <div className="mx-auto w-full max-w-6xl px-4 pb-8 sm:px-6">
+        <SecondsRuler />
+      </div>
     </div>
   );
 }
@@ -155,7 +159,7 @@ function How() {
         <div className="mt-12 grid gap-4 lg:grid-cols-2">
           {TRACKS.map((track) => (
             <div key={track.who} className="flex flex-col rounded-2xl border border-border bg-bg p-6 sm:p-8">
-              <h3 className="text-sm font-semibold text-accent">{track.who}</h3>
+              <h3 className="text-sm font-semibold text-gold">{track.who}</h3>
               <ol className="mt-5 flex-1 space-y-5">
                 {track.steps.map(([title, body], i) => (
                   <li key={title} className="group grid grid-cols-[2rem_1fr] gap-x-3">

@@ -63,7 +63,7 @@ export function HeroPayslip() {
             step={SALARY.step}
             value={monthly}
             onChange={(e) => setMonthly(Number(e.target.value))}
-            className="mt-2 w-full cursor-grab accent-[var(--accent)] active:cursor-grabbing"
+            className="mt-2 w-full cursor-grab accent-[var(--lime)] active:cursor-grabbing"
           />
         </label>
 

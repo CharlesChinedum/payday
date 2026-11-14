@@ -34,10 +34,12 @@ export const CARD_CACHE = {
 };
 
 const SIZE = { width: 1200, height: 630 };
-const INK = "#111827";
+const INK = "#0c0c0d";
 const PAPER = "#ffffff";
-const RULE = "#e5e7eb";
-const ACCENT = "#4f46e5";
+const RULE = "#e6e5e1";
+/** Gold for money and live state; the deep shade for text, the bright one for fills. */
+const GOLD = "#b77f06";
+const GOLD_FILL = "#f0ad1d";
 const perIp = rateLimiter({ id: "card-ip", label: "preview", limit: 60, windowMs: 60_000 });
 const font = (file: string) => readFile(join(process.cwd(), "assets", file));
 const geist = font("Geist-Regular.ttf");
@@ -48,11 +50,11 @@ function Picture({ card, host }: { card: CardContent; host: string }) {
     <div
       style={{ display: "flex", flexDirection: "column", width: "100%", height: "100%", background: PAPER, color: INK, fontFamily: "Sans" }}
     >
-      <div style={{ display: "flex", height: 14, background: ACCENT }} />
+      <div style={{ display: "flex", height: 14, background: GOLD_FILL }} />
       <div style={{ display: "flex", flexDirection: "column", flex: 1, padding: "52px 72px 56px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 24 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-            <div style={{ display: "flex", width: 34, height: 34, borderRadius: 10, background: ACCENT }} />
+            <div style={{ display: "flex", width: 34, height: 34, borderRadius: 10, background: INK }} />
             <div style={{ display: "flex", fontSize: 26, opacity: 0.7 }}>{card.kicker}</div>
           </div>
           <div
@@ -62,11 +64,11 @@ function Picture({ card, host }: { card: CardContent; host: string }) {
               gap: 12,
               padding: "8px 20px",
               borderRadius: 999,
-              border: `2px solid ${ACCENT}`,
-              color: ACCENT,
+              border: `2px solid ${RULE}`,
+              color: INK,
             }}
           >
-            <div style={{ display: "flex", width: 12, height: 12, borderRadius: 999, background: ACCENT }} />
+            <div style={{ display: "flex", width: 12, height: 12, borderRadius: 999, background: GOLD_FILL }} />
             {card.badge ?? `On NEAR ${config.networkId}`}
           </div>
         </div>
@@ -75,13 +77,13 @@ function Picture({ card, host }: { card: CardContent; host: string }) {
           <div style={{ display: "flex", fontSize: longTitle ? 52 : 68, lineHeight: 1.08, letterSpacing: -2 }}>{card.title}</div>
           {card.amount ? (
             <div style={{ display: "flex", flexDirection: "column" }}>
-              <div style={{ display: "flex", fontSize: 124, lineHeight: 1.1, letterSpacing: -5, color: ACCENT, marginTop: 8 }}>
+              <div style={{ display: "flex", fontSize: 124, lineHeight: 1.1, letterSpacing: -5, color: GOLD, marginTop: 8 }}>
                 {card.amount}
               </div>
               <div style={{ display: "flex", fontSize: 30, marginTop: 12, opacity: 0.75 }}>{card.caption}</div>
             </div>
           ) : (
-            <div style={{ display: "flex", fontSize: 56, letterSpacing: -2, marginTop: 20, color: ACCENT }}>{card.caption}</div>
+            <div style={{ display: "flex", fontSize: 56, letterSpacing: -2, marginTop: 20, color: GOLD }}>{card.caption}</div>
           )}
         </div>
 

@@ -41,7 +41,7 @@ function BalanceHero(props: {
   return (
     <section className="relative overflow-hidden rounded-3xl bg-hero p-6 text-hero-ink sm:p-8">
       <div className="flex items-center gap-2 text-xs font-medium text-hero-ink/70">
-        {streaming.length > 0 && <LiveDot tone="lime" />}
+        {streaming.length > 0 && <LiveDot />}
         Available to withdraw
       </div>
       <p className="mt-3 text-5xl font-semibold tracking-tight sm:text-6xl">
